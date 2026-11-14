@@ -244,9 +244,9 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
 
         listHeader.setOnClickListener { openNumpad() }
         vodEntrada = findViewById(R.id.vodEntrada)
-        // O menu do topo substitui o atalho "voltar ao início" da lista.
+        // No APK ao vivo a imagem é a tela inicial; a lista abre sobre o canal.
         vodEntrada.visibility = View.GONE
-        montarMenuGlobal()
+        if (!BuildConfig.TV_AO_VIVO) montarMenuGlobal()
         vodEntrada.setOnClickListener {
             // A tela inicial está sempre por baixo: voltar a ela é fechar esta.
             EscolhaActivity.voltar(this)
@@ -1186,7 +1186,9 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             Painel.Item(getString(R.string.connect_titulo),
                 getString(R.string.connect_ip_pin, Connect.obterIpLocal(), Connect.pinAtual),
                 icone = R.drawable.ic_cast) { mostrarDialogoConectar() },
-            Painel.Item(getString(R.string.opcoes_inicio), icone = R.drawable.ic_home) { finish() },
+            Painel.Item(getString(R.string.menu_ajustes), icone = R.drawable.ic_settings) {
+                AjustesActivity.abrir(this)
+            },
         )
         Painel.mostrar(this, canal.name, itens, Epg.nowNext(canal.name)?.first?.title)
     }

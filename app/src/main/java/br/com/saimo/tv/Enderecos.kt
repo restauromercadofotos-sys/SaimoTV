@@ -8,14 +8,8 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * Os dois endereços das listas no formato do Saimo (canais, e filmes e séries),
- * informados por quem usa o app.
- *
- * O app não traz endereço nenhum: sem um endereço (ou sem uma lista própria
- * em "Minhas listas") as telas ficam vazias e pedem uma lista. Em Ajustes >
- * Listas a pessoa informa, troca ou desativa (valor vazio) cada endereço. Lista
- * sem endereço não faz nenhum pedido de rede. Quem já usava um endereço o tem
- * gravado nas preferências e continua com ele.
+ * O endereço da lista própria de cada APK, com a escolha da pessoa por cima.
+ * O APK ao vivo nasce com os canais; o de filmes nasce com o acervo VOD.
  */
 object Enderecos {
 
@@ -26,6 +20,9 @@ object Enderecos {
     /// Quando os endereços foram escolhidos (ms; 0 = nunca). Na sincronia
     /// com o celular pelo Saimo Connect vale o mais recente.
     private const val EM = "linksEm"
+
+    const val PADRAO_CANAIS = "https://canais-saimo.pages.dev/"
+    const val PADRAO_FILMES = "https://filmes-saimo.pages.dev/"
 
     /// Base já normalizada (termina em `/`), ou nulo quando não há endereço.
     @Volatile
@@ -41,9 +38,17 @@ object Enderecos {
     /** Chamado uma vez, na criação do app, antes de qualquer tela. */
     fun iniciar(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        // Valor guardado vale (vazio = desativada); sem valor, não há endereço.
-        canais = normalizar(prefs.getString(CANAIS, "").orEmpty())
-        filmes = normalizar(prefs.getString(FILMES, "").orEmpty())
+        // Uma escolha já gravada, inclusive vazia, sempre vence o padrão.
+        canais = if (prefs.contains(CANAIS)) normalizar(prefs.getString(CANAIS, "").orEmpty())
+                  else PADRAO_CANAIS.takeIf { BuildConfig.TV_AO_VIVO }
+        filmes = if (prefs.contains(FILMES)) normalizar(prefs.getString(FILMES, "").orEmpty())
+                  else PADRAO_FILMES.takeUnless { BuildConfig.TV_AO_VIVO }
+        if (!prefs.contains(CANAIS) || !prefs.contains(FILMES)) {
+            prefs.edit().apply {
+                if (!prefs.contains(CANAIS) && BuildConfig.TV_AO_VIVO) putString(CANAIS, PADRAO_CANAIS)
+                if (!prefs.contains(FILMES) && !BuildConfig.TV_AO_VIVO) putString(FILMES, PADRAO_FILMES)
+            }.apply()
+        }
         if (!prefs.getBoolean(MIGRADO, false)) {
             // Versões anteriores baixavam as listas de endereços fixos. Quem
             // atualiza começa vazio: favoritos, progresso e ajustes ficam.

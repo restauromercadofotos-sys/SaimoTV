@@ -411,6 +411,8 @@
     <!-- Endereço das listas (primeira abertura e Ajustes > Listas) -->
     <string name="listas_titulo">Endereço das listas</string>
     <string name="listas_texto">Informe o endereço da lista de canais e o da lista de filmes e séries do Saimo.</string>
+    <string name="listas_texto_canais">O APK já inclui a lista de canais do Saimo. Troque o endereço somente se quiser usar outra lista no mesmo formato.</string>
+    <string name="listas_texto_filmes">O APK já inclui o catálogo de filmes e séries do Saimo. Troque o endereço somente se quiser usar outro catálogo no mesmo formato.</string>
     <string name="listas_texto_ajustes">Deixe um campo em branco para desativar aquela lista.</string>
     <string name="listas_restaurar">Restaurar padrão</string>
     <string name="listas_canais">Canais</string>

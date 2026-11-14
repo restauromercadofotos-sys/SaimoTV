@@ -262,9 +262,10 @@ abstract class TelaComMenu : AppCompatActivity() {
         // Recorta cada parte no próprio espaço: a imagem larga da ficha, sem
         // isso, desenhava por cima do menu.
         val raiz = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val barra = MenuGlobal.criar(this, aba, { aoFocarMenu() }, aoMenuInicio)
+        val barra = if (BuildConfig.TV_AO_VIVO) null
+                    else MenuGlobal.criar(this, aba, { aoFocarMenu() }, aoMenuInicio)
         barraMenu = barra
-        raiz.addView(barra)
+        barra?.let(raiz::addView)
         // O conteúdo e, por cima, o estado vazio (escondido até alguém pedir).
         val moldura = android.widget.FrameLayout(this)
         val conteudo = layoutInflater.inflate(layoutResID, moldura, false)
@@ -283,6 +284,7 @@ abstract class TelaComMenu : AppCompatActivity() {
         }
         raiz.addView(moldura, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         super.setContentView(raiz)
+        if (barra == null) return
         // O sistema dá o primeiro foco ao primeiro focável da tela — que seria
         // a aba "Início". Enquanto o conteúdo não pega o foco, o menu fica de
         // fora; depois (ou em dois segundos, se o conteúdo não tiver nada), a

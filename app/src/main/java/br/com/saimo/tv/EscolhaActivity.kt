@@ -66,6 +66,10 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (BuildConfig.TV_AO_VIVO) {
+            abrirTvAoVivo()
+            return
+        }
         setContentView(R.layout.activity_escolha)
         status = findViewById(R.id.escolhaStatus)
         filas = findViewById(R.id.inicioFilas)
@@ -119,6 +123,24 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         if (BuildConfig.TV_AO_VIVO && savedInstanceState == null && !veioDeLink && Preferencias.abrirEm == "canal" &&
             Preferencias.ultimoCanal != null) {
             quandoAberturaAcabar { if (!isFinishing) startActivity(Intent(this, MainActivity::class.java)) }
+        }
+    }
+
+    /** No APK de canais esta Activity é só a porta de entrada do launcher. */
+    private fun abrirTvAoVivo() {
+        lifecycleScope.launch(semDerrubar) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                if (Remote.channels.isEmpty()) Remote.loadCached(this@EscolhaActivity)
+                if (Remote.channels.isEmpty() && Enderecos.canais != null) {
+                    runCatching { Remote.refresh(this@EscolhaActivity.applicationContext, forcar = true) }
+                    runCatching { GuiaTabelas.atualizar(this@EscolhaActivity.applicationContext) }
+                }
+            }
+            val destino = Intent(this@EscolhaActivity, MainActivity::class.java)
+            intent?.data?.takeIf { it.host == "canal" }?.getQueryParameter("n")
+                ?.let { destino.putExtra(MainActivity.EXTRA_CANAL, it) }
+            startActivity(destino)
+            finish()
         }
     }
 

@@ -16,6 +16,17 @@ não aparecem em nenhuma variante. Eventos continuam no app de TV ao vivo.
 A separação usa product flavors com código compartilhado; esta etapa não divide
 o código em módulos independentes nem garante redução do tamanho dos APKs.
 
+Cada variante já nasce com sua fonte oficial configurada: o APK ao vivo usa
+`https://canais-saimo.pages.dev/` e o APK de filmes e séries usa
+`https://filmes-saimo.pages.dev/`. O endereço pode ser trocado em Ajustes; uma
+escolha já salva, inclusive vazia, sempre prevalece sobre o padrão.
+
+O APK **TV ao Vivo** abre diretamente no último canal (ou no primeiro
+disponível), sem tela inicial nem menu de filmes/VOD. Durante a reprodução, as
+setas abrem a lista de canais e o guia, cima/baixo trocam de canal e OK mostra a
+programação. O APK **Filmes e Séries** mantém somente a navegação de catálogo,
+favoritos, busca e ajustes; “TV ao vivo” e “Eventos” não aparecem nele.
+
 ## Compilar e testar
 
 Use o SDK e as versões de Java/Gradle/AGP já exigidos pelo projeto original.

@@ -45,7 +45,9 @@ object ListasDialogo {
         val mesmoAssim = vista.findViewById<TextView>(R.id.listasMesmoAssim)
         val fechar = vista.findViewById<TextView>(R.id.listasFechar)
 
-        texto.text = activity.getString(R.string.listas_texto) + "\n" + activity.getString(R.string.listas_texto_ajustes)
+        texto.text = activity.getString(
+            if (BuildConfig.TV_AO_VIVO) R.string.listas_texto_canais else R.string.listas_texto_filmes
+        ) + "\n" + activity.getString(R.string.listas_texto_ajustes)
         fechar.setText(R.string.listas_cancelar)
         Icones.inicio(salvar, R.drawable.ic_check)
         Icones.inicio(tentar, R.drawable.ic_replay)
@@ -53,9 +55,15 @@ object ListasDialogo {
         Icones.inicio(fechar, R.drawable.ic_close)
         campoCanais.setText(Enderecos.canais.orEmpty())
         campoFilmes.setText(Enderecos.filmes.orEmpty())
+        val campoAtivo = if (BuildConfig.TV_AO_VIVO) campoCanais else campoFilmes
+        val campoOculto = if (BuildConfig.TV_AO_VIVO) campoFilmes else campoCanais
+        val rotuloOculto = vista.findViewById<View>(
+            if (BuildConfig.TV_AO_VIVO) R.id.listasRotuloFilmes else R.id.listasRotuloCanais)
+        campoOculto.visibility = View.GONE
+        rotuloOculto.visibility = View.GONE
 
         // O celular escreve no campo em que a pessoa está.
-        var atual: EditText = campoCanais
+        var atual: EditText = campoAtivo
         fun pedirTextoAoCelular(campo: EditText) {
             atual = campo
             Connect.notificarAberturaDeTexto(campo.hint?.toString().orEmpty(), campo.text.toString())
@@ -173,7 +181,7 @@ object ListasDialogo {
         }
         dialogo.show()
         Vr.telaCheia(dialogo.window)
-        campoCanais.requestFocus()
+        campoAtivo.requestFocus()
         return dialogo
     }
 }

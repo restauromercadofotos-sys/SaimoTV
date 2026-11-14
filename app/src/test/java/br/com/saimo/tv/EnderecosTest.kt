@@ -10,6 +10,14 @@ class EnderecosTest {
     private fun n(texto: String) = Enderecos.normalizar(texto)
 
     @Test
+    fun `enderecos nativos usam o formato esperado`() {
+        assertEquals("https://canais-saimo.pages.dev/", Enderecos.PADRAO_CANAIS)
+        assertEquals("https://filmes-saimo.pages.dev/", Enderecos.PADRAO_FILMES)
+        assertEquals(Enderecos.PADRAO_CANAIS, n(Enderecos.PADRAO_CANAIS))
+        assertEquals(Enderecos.PADRAO_FILMES, n(Enderecos.PADRAO_FILMES))
+    }
+
+    @Test
     fun `sem esquema vira https`() {
         assertEquals("https://exemplo.dev/", n("exemplo.dev"))
         assertEquals("https://exemplo.dev/", n("  exemplo.dev  "))
