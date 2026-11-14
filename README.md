@@ -52,8 +52,11 @@ O workflow `.github/workflows/apks.yml` testa e compila as duas variantes em
 cada push na branch `feat/separar-tv-e-filmes`. Também aceita execução manual.
 Abra a execução na aba **Actions** e baixe os artefatos
 `saimo-tv-ao-vivo-debug` e `saimo-filmes-series-debug`.
-São APKs de teste com assinatura de debug, sem necessidade de cadastrar segredos.
-A assinatura de release continua sendo uma etapa separada antes da distribuição.
+São APKs de teste. O workflow recebe a chave privada pelo Secret
+`CI_KEYSTORE_BASE64`, portanto
+um artefato novo pode atualizar o anterior com `adb install -r`. A assinatura de
+release continua sendo uma etapa separada. A chave de teste usa PKCS12, para
+poder ser criada com OpenSSL sem exigir Java na máquina de quem mantém o fork.
 
 ## Fileiras no launcher da Mi Box
 

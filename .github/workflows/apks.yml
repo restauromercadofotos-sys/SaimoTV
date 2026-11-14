@@ -26,6 +26,13 @@ jobs:
           packages: platform-tools
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
+      - name: Configurar assinatura estável dos APKs de teste
+        env:
+          CI_KEYSTORE_BASE64: ${{ secrets.CI_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$CI_KEYSTORE_BASE64"
+          printf '%s' "$CI_KEYSTORE_BASE64" | base64 --decode > ci-debug.jks
+          printf 'storeFile=../ci-debug.jks\nstoreType=PKCS12\nstorePassword=android\nkeyAlias=apps\nkeyPassword=android\n' > keystore.properties
       - name: Testar e compilar os dois aplicativos
         run: >-
           ./gradlew --no-daemon

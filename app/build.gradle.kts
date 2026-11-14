@@ -62,6 +62,7 @@ android {
                 storePassword = chave.getProperty("storePassword")
                 keyAlias = chave.getProperty("keyAlias")
                 keyPassword = chave.getProperty("keyPassword")
+                chave.getProperty("storeType")?.let { storeType = it }
             }
         }
     }
