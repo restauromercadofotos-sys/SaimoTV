@@ -55,11 +55,16 @@ para seu feed e publique cada APK com seu identificador e assinatura corretos.
 
 ## Validação pendente
 
-O build e os testes JVM não executaram neste ambiente: o Gradle Wrapper não
-conseguiu baixar a distribuição (conexão recusada); o SDK Android também não
-está instalado. Validar os dois builds antes de distribuir. No aparelho,
-verificar instalação simultânea, controle remoto/foco/Voltar, reprodução,
-busca por voz e links, especialmente em TV Box com Android convencional.
+Os dois APKs debug e as duas suítes JVM foram compilados e executados com
+sucesso no [GitHub Actions](https://github.com/restauromercadofotos-sys/SaimoTV/actions/runs/43535014863),
+no commit `c0147bc`. A suíte completa foi mantida, incluindo os testes que
+consultam feeds de guia ao vivo. Os APKs podem ser baixados na seção
+**Artifacts** dessa execução, nos dois arquivos identificados acima.
+
+A validação em aparelho ainda está pendente: verificar instalação simultânea,
+controle remoto/foco/Voltar, reprodução, busca por voz e links, especialmente
+em TV Box com Android convencional. Os artefatos são de teste, assinados em debug;
+use chave própria e build de release antes da distribuição definitiva.
 
 ---
 
