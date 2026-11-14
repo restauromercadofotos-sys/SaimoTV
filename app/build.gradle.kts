@@ -95,6 +95,7 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        resValues = true
         // A atualização compara a versão instalada com a do release.
         buildConfig = true
     }

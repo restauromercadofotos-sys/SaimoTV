@@ -1,0 +1,50 @@
+name: APKs de TV ao vivo e filmes
+
+on:
+  push:
+    branches: [feat/separar-tv-e-filmes]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Testar e compilar os dois aplicativos
+        run: >-
+          ./gradlew --no-daemon
+          :app:testAoVivoDebugUnitTest :app:testFilmesSeriesDebugUnitTest
+          :app:assembleAoVivoDebug :app:assembleFilmesSeriesDebug
+      - name: APK de TV ao vivo
+        uses: actions/upload-artifact@v4
+        with:
+          name: saimo-tv-ao-vivo-debug
+          path: app/build/outputs/apk/aoVivo/debug/*.apk
+          if-no-files-found: error
+      - name: APK de filmes e séries
+        uses: actions/upload-artifact@v4
+        with:
+          name: saimo-filmes-series-debug
+          path: app/build/outputs/apk/filmesSeries/debug/*.apk
+          if-no-files-found: error
+      - name: Resultados dos testes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultados-dos-testes
+          path: app/build/reports/tests/
+          if-no-files-found: ignore

@@ -35,6 +35,15 @@ Configure `keystore.properties` com sua própria chave antes de distribuir. Sem
 ela, o comportamento herdado do projeto usa assinatura de debug até em release.
 Guarde a chave: futuras atualizações precisam da mesma assinatura.
 
+## GitHub Actions
+
+O workflow `.github/workflows/apks.yml` testa e compila as duas variantes em
+cada push na branch `feat/separar-tv-e-filmes`. Também aceita execução manual.
+Abra a execução na aba **Actions** e baixe os artefatos
+`saimo-tv-ao-vivo-debug` e `saimo-filmes-series-debug`.
+São APKs de teste com assinatura de debug, sem necessidade de cadastrar segredos.
+A assinatura de release continua sendo uma etapa separada antes da distribuição.
+
 ## Atualizações
 
 O feed original só fornece o APK completo (`arquivos.tvbox`). As variantes
