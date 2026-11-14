@@ -9,14 +9,23 @@ import org.junit.Test
 
 class AtualizacaoTest {
 
+    private val chave = if (BuildConfig.TV_AO_VIVO) "tvbox_aovivo" else "tvbox_filmes"
+    private val outra = if (BuildConfig.TV_AO_VIVO) "tvbox_filmes" else "tvbox_aovivo"
+
     private val apk = "https://github.com/dono/repo/releases/download/v2.4.0/SaimoTV.apk"
 
     private fun json(url: String = apk, tag: String = "v2.4.0", sha: String = "ABC123") = """
         {"versao":"2.4.0","tag":"$tag","publicadoEm":"2026-10-19T00:00:00Z","notas":"texto",
          "arquivos":{
-          "tvbox":{"nome":"SaimoTV.apk","url":"$url","bytes":4926733,"sha256":"$sha"},
+          "$chave":{"nome":"SaimoTV.apk","url":"$url","bytes":4926733,"sha256":"$sha"},
           "celular":{"nome":"SaimoCell.apk","url":"https://evil.com/x.apk","bytes":0,"sha256":""}}}
     """.trimIndent()
+
+    @Test
+    fun `nao oferece o apk completo nem o da outra variante`() {
+        assertNull(Atualizacao.interpretar(json().replace(chave, "tvbox")))
+        assertNull(Atualizacao.interpretar(json().replace(chave, outra)))
+    }
 
     @Test
     fun `le a versao da tv box`() {

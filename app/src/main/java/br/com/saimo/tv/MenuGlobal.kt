@@ -72,7 +72,7 @@ object MenuGlobal {
             Triple(Aba.AJUSTES, R.string.menu_ajustes, R.drawable.ic_settings)
         )
 
-        for ((aba, texto, icone) in itens) {
+        for ((aba, texto, icone) in itens.filter { Conteudo.permiteAba(it.first) }) {
             abas.addView(TextView(tela).apply {
                 text = tela.getString(texto)
                 tag = aba
@@ -152,7 +152,7 @@ object MenuGlobal {
     }
 
     private fun ir(tela: Activity, aba: Aba, atual: Aba) {
-        if (aba == atual) return
+        if (aba == atual || !Conteudo.permiteAba(aba)) return
         val inicio = Intent(tela, EscolhaActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val destino: Intent? = when (aba) {

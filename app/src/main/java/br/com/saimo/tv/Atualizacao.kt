@@ -112,13 +112,13 @@ object Atualizacao {
     }.getOrNull()
 
     /**
-     * Lê o versao.json e devolve a versão da TV Box (`arquivos.tvbox`), ou nulo
+     * Lê o versao.json e devolve a versão da variante, ou nulo
      * se faltar algo, a tag não tiver cara de versão ou o endereço do APK não
      * for um download de release do GitHub.
      */
     fun interpretar(json: String): Versao? = runCatching {
         val raiz = JSONObject(json)
-        val arquivo = raiz.optJSONObject("arquivos")?.optJSONObject("tvbox") ?: return@runCatching null
+        val arquivo = raiz.optJSONObject("arquivos")?.optJSONObject(if (BuildConfig.TV_AO_VIVO) "tvbox_aovivo" else "tvbox_filmes") ?: return@runCatching null
         val url = arquivo.optString("url")
         if (!urlPermitida(url)) return@runCatching null
         // A tag precisa ter cara de versão ("v1.2" ou "1.2.3"). Um "beta-v2"

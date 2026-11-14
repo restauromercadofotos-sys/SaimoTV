@@ -93,14 +93,14 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
             // Ler 990 canais do disco leva segundos num TV Box fraco: fora da
             // linha da tela, para ela aparecer já.
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                if (Remote.channels.isEmpty()) Remote.loadCached(this@EscolhaActivity)
+                if (BuildConfig.TV_AO_VIVO && Remote.channels.isEmpty()) Remote.loadCached(this@EscolhaActivity)
             }
             montarFilas()
-            Epg.carregarCache(this@EscolhaActivity)
+            if (BuildConfig.TV_AO_VIVO) Epg.carregarCache(this@EscolhaActivity)
             montarFilas()
             // Primeira abertura (ou cache apagado): os endereços já estão ativos,
             // então baixa as listas sem a pessoa digitar nada.
-            if (Remote.channels.isEmpty() && Enderecos.canais != null) {
+            if (BuildConfig.TV_AO_VIVO && Remote.channels.isEmpty() && Enderecos.canais != null) {
                 Listas.recarregar(this@EscolhaActivity.applicationContext)
                 aoMudarListas()
             }
@@ -116,7 +116,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         atenderLink(intent)
         // "Ir direto ao último canal", escolhido em Ajustes: esta tela fica por
         // baixo, e VOLTAR do canal cai nela.
-        if (savedInstanceState == null && !veioDeLink && Preferencias.abrirEm == "canal" &&
+        if (BuildConfig.TV_AO_VIVO && savedInstanceState == null && !veioDeLink && Preferencias.abrirEm == "canal" &&
             Preferencias.ultimoCanal != null) {
             quandoAberturaAcabar { if (!isFinishing) startActivity(Intent(this, MainActivity::class.java)) }
         }
@@ -124,8 +124,10 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
 
     override fun aoMudarListas() {
         lifecycleScope.launch(semDerrubar) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Remote.loadCached(this@EscolhaActivity) }
-            Epg.carregarCache(this@EscolhaActivity)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                if (BuildConfig.TV_AO_VIVO) Remote.loadCached(this@EscolhaActivity)
+            }
+            if (BuildConfig.TV_AO_VIVO) Epg.carregarCache(this@EscolhaActivity)
             montarFilas()
         }
     }
@@ -153,7 +155,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
             // Voltando do player ou da ficha: o "continuar" mudou. O guia pode
             // ter saído da memória com o app em segundo plano.
             lifecycleScope.launch(semDerrubar) {
-                Epg.carregarCache(this@EscolhaActivity)
+                if (BuildConfig.TV_AO_VIVO) Epg.carregarCache(this@EscolhaActivity)
                 montarFilas()
             }
         }
@@ -183,6 +185,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
     }
 
     override fun sintonizarCanal(nome: String, metade: Int?) {
+        if (!BuildConfig.TV_AO_VIVO) return
         startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_CANAL, nome))
     }
 
@@ -262,6 +265,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
     }
 
     private fun abrirAoVivo() {
+        if (!BuildConfig.TV_AO_VIVO) return
         startActivity(Intent(this, MainActivity::class.java))
     }
 
@@ -285,6 +289,10 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
     private val abertaEm = System.currentTimeMillis()
 
     private suspend fun montarFilas() {
+        if (BuildConfig.TV_AO_VIVO) {
+            mostrarFilas(listOfNotNull(aoVivo()))
+            return
+        }
         // O que é local (continuar, ao vivo, favoritos) entra antes das fichas:
         // ler as fichas (3,7 MB) leva até 2 s num TV Box lento, e a tela
         // ficava vazia esse tempo todo. As capas dos destaques chegam depois.
@@ -357,6 +365,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
 
     /** Os canais favoritos — ou os abertos — com o que passa agora. */
     private fun aoVivo(): Inicio.Fila? {
+        if (!BuildConfig.TV_AO_VIVO) return null
         val todos = MinhasListas.somar(Remote.channels, false)
         if (todos.isEmpty()) return null
         val ultimo = todos.firstOrNull { it.name == Preferencias.ultimoCanal }
@@ -430,7 +439,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         when (keyCode) {
             KeyEvent.KEYCODE_GUIDE, KeyEvent.KEYCODE_CHANNEL_UP,
             KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_TV -> { abrirAoVivo(); return true }
-            KeyEvent.KEYCODE_SEARCH -> { BuscaActivity.abrir(this); return true }
+            KeyEvent.KEYCODE_SEARCH -> { if (!BuildConfig.TV_AO_VIVO) BuscaActivity.abrir(this); return true }
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
                 // Primeiro VOLTAR sobe para o menu; o segundo, de lá, pede
                 // confirmação — sair do app sem querer é o erro mais comum.
@@ -463,7 +472,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
             }
             Intent.ACTION_SEARCH -> {
                 val termo = intent.getStringExtra(android.app.SearchManager.QUERY)?.trim().orEmpty()
-                if (termo.isNotEmpty()) BuscaActivity.abrir(this, termo)
+                if (!BuildConfig.TV_AO_VIVO && termo.isNotEmpty()) BuscaActivity.abrir(this, termo)
                 intent.action = null
             }
         }

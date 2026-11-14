@@ -28,7 +28,7 @@ object CanalNaTv {
     private const val VALIDADE_MS = 12 * 60 * 60 * 1000L
 
     suspend fun publicar(context: Context) = withContext(Dispatchers.IO) {
-        if (Build.VERSION.SDK_INT < 26) return@withContext
+        if (BuildConfig.TV_AO_VIVO || Build.VERSION.SDK_INT < 26) return@withContext
         if (!context.packageManager.hasSystemFeature("android.software.leanback")) return@withContext
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (System.currentTimeMillis() - prefs.getLong("quando", 0L) < VALIDADE_MS) return@withContext
@@ -41,7 +41,7 @@ object CanalNaTv {
                 canal = ajudante.publishDefaultChannel(
                     PreviewChannel.Builder()
                         .setDisplayName(fila.titulo)
-                        .setAppLinkIntentUri(Uri.parse("saimo://inicio"))
+                        .setAppLinkIntentUri(Uri.parse("${BuildConfig.LINK_SCHEME}://inicio"))
                         .setLogo(logo)
                         .build())
                 if (canal < 0) return@withContext

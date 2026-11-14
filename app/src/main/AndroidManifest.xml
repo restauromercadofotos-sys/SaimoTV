@@ -13,8 +13,8 @@
     <!-- "Continuar assistindo" e a fileira do Saimo na tela inicial da TV. -->
     <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
 
-    <!-- Televisão primeiro: sem toque, tudo pelo controle. -->
-    <uses-feature android:name="android.software.leanback" android:required="true" />
+    <!-- Sem toque, tudo pelo controle. Leanback opcional para TV Box com Android comum. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <!-- Minhas listas: saber se a TV tem um seletor de arquivos de verdade. -->
@@ -74,7 +74,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="saimo" />
+                <data android:scheme="${linkScheme}" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEARCH" />
@@ -105,7 +105,7 @@
         </activity>
         <provider
             android:name=".BuscaDoSistema"
-            android:authorities="br.com.saimo.tv.busca"
+            android:authorities="${applicationId}.busca"
             android:exported="true" />
         <activity
             android:name=".MainActivity"

@@ -1,3 +1,61 @@
+# Dois aplicativos: TV ao vivo e filmes/séries
+
+Esta branch reutiliza o player, a navegação por controle remoto e as adaptações
+para Android TV/Google TV e TV Box da versão completa. Android mínimo: 6 (API 23).
+Leanback é opcional para permitir também TV Box com Android convencional; os
+launchers Android e Android TV continuam declarados, sem exigir tela de toque.
+
+| Variante | Nome | Application ID | Links |
+| --- | --- | --- | --- |
+| `aoVivo` | Saimo TV ao Vivo | `br.com.saimo.tv.aovivo` | `saimo-aovivo://` |
+| `filmesSeries` | Saimo Filmes e Séries | `br.com.saimo.tv.filmes` | `saimo-filmes://` |
+
+Podem ser instalados juntos e ao lado do original. Preferências e dados ficam
+separados por aplicativo; não há migração automática do app completo. Rádios
+não aparecem em nenhuma variante. Eventos continuam no app de TV ao vivo.
+A separação usa product flavors com código compartilhado; esta etapa não divide
+o código em módulos independentes nem garante redução do tamanho dos APKs.
+
+## Compilar e testar
+
+Use o SDK e as versões de Java/Gradle/AGP já exigidos pelo projeto original.
+
+```sh
+./gradlew :app:testAoVivoDebugUnitTest :app:testFilmesSeriesDebugUnitTest
+./gradlew :app:assembleAoVivoDebug :app:assembleFilmesSeriesDebug
+```
+
+APKs de teste:
+
+- `app/build/outputs/apk/aoVivo/debug/app-aoVivo-debug.apk`
+- `app/build/outputs/apk/filmesSeries/debug/app-filmesSeries-debug.apk`
+
+Para release: `./gradlew :app:assembleAoVivoRelease :app:assembleFilmesSeriesRelease`.
+Configure `keystore.properties` com sua própria chave antes de distribuir. Sem
+ela, o comportamento herdado do projeto usa assinatura de debug até em release.
+Guarde a chave: futuras atualizações precisam da mesma assinatura.
+
+## Atualizações
+
+O feed original só fornece o APK completo (`arquivos.tvbox`). As variantes
+ignoram essa entrada e só aceitam `arquivos.tvbox_aovivo` ou
+`arquivos.tvbox_filmes`, respectivamente. Até publicar essas entradas no feed,
+não haverá oferta de atualização para os novos apps. O endereço do feed ainda
+é o original; para distribuir por conta própria, configure `Atualizacao.URL_VERSAO`
+para seu feed e publique cada APK com seu identificador e assinatura corretos.
+
+## Validação pendente
+
+O build e os testes JVM não executaram neste ambiente: o Gradle Wrapper não
+conseguiu baixar a distribuição (conexão recusada); o SDK Android também não
+está instalado. Validar os dois builds antes de distribuir. No aparelho,
+verificar instalação simultânea, controle remoto/foco/Voltar, reprodução,
+busca por voz e links, especialmente em TV Box com Android convencional.
+
+---
+
+Documentação original da versão completa, mantida abaixo como referência:
+
 # Saimo TV — Android TV / Google TV
 
 <p align="center">

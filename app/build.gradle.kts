@@ -32,6 +32,28 @@ android {
         versionName = "3.0.1"
     }
 
+    flavorDimensions += "conteudo"
+    productFlavors {
+        create("aoVivo") {
+            dimension = "conteudo"
+            applicationIdSuffix = ".aovivo"
+            resValue("string", "app_name", "Saimo TV ao Vivo")
+            resValue("string", "busca_authority", "br.com.saimo.tv.aovivo.busca")
+            buildConfigField("boolean", "TV_AO_VIVO", "true")
+            buildConfigField("String", "LINK_SCHEME", "\"saimo-aovivo\"")
+            manifestPlaceholders["linkScheme"] = "saimo-aovivo"
+        }
+        create("filmesSeries") {
+            dimension = "conteudo"
+            applicationIdSuffix = ".filmes"
+            resValue("string", "app_name", "Saimo Filmes e Séries")
+            resValue("string", "busca_authority", "br.com.saimo.tv.filmes.busca")
+            buildConfigField("boolean", "TV_AO_VIVO", "false")
+            buildConfigField("String", "LINK_SCHEME", "\"saimo-filmes\"")
+            manifestPlaceholders["linkScheme"] = "saimo-filmes"
+        }
+    }
+
     signingConfigs {
         create("saimo") {
             val arquivo = chave.getProperty("storeFile")

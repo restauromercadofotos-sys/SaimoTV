@@ -41,6 +41,7 @@ class BuscaDoSistema : ContentProvider() {
             SearchManager.SUGGEST_COLUMN_INTENT_DATA,
         )
         val cursor = MatrixCursor(colunas)
+        if (BuildConfig.TV_AO_VIVO) return cursor
         val termo = (selectionArgs?.firstOrNull() ?: uri.lastPathSegment).orEmpty()
             .takeUnless { it == SearchManager.SUGGEST_URI_PATH_QUERY }.orEmpty().trim()
         if (termo.length < 2) return cursor

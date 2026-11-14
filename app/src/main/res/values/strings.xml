@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Saimo TV</string>
+
     <string name="update_titulo">Versão %1$s disponível</string>
     <string name="update_atual">Você está na %1$s.</string>
     <string name="update_agora">Atualizar</string>

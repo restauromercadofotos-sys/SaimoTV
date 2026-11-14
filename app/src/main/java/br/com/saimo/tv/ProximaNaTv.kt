@@ -31,7 +31,7 @@ object ProximaNaTv {
             context.packageManager.hasSystemFeature("android.software.leanback")
 
     fun atualizar(context: Context, r: Titulos.Resolvido, ep: Titulos.Ep?, posicao: Long, duracao: Long) {
-        if (!disponivel(context) || duracao <= 0) return
+        if (BuildConfig.TV_AO_VIVO || !disponivel(context) || duracao <= 0) return
         // A cada meio minuto basta: o sistema só mostra a barrinha.
         val agora = System.currentTimeMillis()
         if (agora - ultimaVez < 30_000 && posicao < duracao - 120_000) return

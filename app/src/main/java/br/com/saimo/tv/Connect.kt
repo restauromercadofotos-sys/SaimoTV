@@ -858,6 +858,7 @@ object Connect {
         }
 
         private fun executarComando(tipo: String, json: JSONObject) {
+            if (!Conteudo.permiteComando(tipo)) return
             handler.post {
                 val act = SaimoApp.atividadeAtual
                 val lis = (act as? Listener) ?: listener
