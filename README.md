@@ -44,6 +44,20 @@ Abra a execução na aba **Actions** e baixe os artefatos
 São APKs de teste com assinatura de debug, sem necessidade de cadastrar segredos.
 A assinatura de release continua sendo uma etapa separada antes da distribuição.
 
+## Fileiras no launcher da Mi Box
+
+No app **Filmes e Séries**, abrir a tela inicial publica dois Preview Channels:
+**Séries em alta** e **Filmes em destaque**, com até 20 títulos distintos por
+fileira. Os cartões vêm dos destaques do catálogo configurado e abrem a ficha
+do título. Séries inclui também animes e doramas do catálogo.
+
+Compatível com o launcher padrão do Android TV 8 ou superior. Na Mi Box,
+abra o app uma vez com o catálogo disponível e depois vá a **Personalizar canais**
+na tela inicial para habilitar as fileiras desejadas. A primeira fileira é
+solicitada como padrão; o launcher decide sua visibilidade. A atualização ocorre
+na abertura do app, no máximo a cada 12 horas. O app de TV ao vivo não publica
+essas fileiras. A validação visual na Mi Box ainda deve ser feita no aparelho.
+
 ## Atualizações
 
 O feed original só fornece o APK completo (`arquivos.tvbox`). As variantes

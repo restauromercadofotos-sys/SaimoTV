@@ -12,65 +12,71 @@ import androidx.tvprovider.media.tv.TvContractCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * A fileira "Em alta no Saimo" na tela inicial do Android TV.
- *
- * As mesmas capas da primeira fileira do acervo, publicadas no sistema: quem
- * liga a TV já vê o que tem de novo, e um OK abre a ficha do título. Refeita
- * no máximo uma vez a cada doze horas, que é quanto os destaques duram.
- *
- * Aparelho sem o provedor de canais (Android antigo, alguns TV Box) ignora.
- */
+/** Fileiras do app de filmes no launcher Android TV 8+, incluindo Mi Box. */
 @UnstableApi
 object CanalNaTv {
 
     private const val PREFS = "canal_na_tv"
     private const val VALIDADE_MS = 12 * 60 * 60 * 1000L
 
+    internal fun selecionar(filas: List<Destaques.Fila>, series: Boolean): List<Destaques.Item> =
+        filas.flatMap { it.itens }.filter { it.serie == series }
+            .distinctBy { Triple(it.tipo, it.titulo, it.ano) }.take(20)
+
     suspend fun publicar(context: Context) = withContext(Dispatchers.IO) {
         if (BuildConfig.TV_AO_VIVO || Build.VERSION.SDK_INT < 26) return@withContext
         if (!context.packageManager.hasSystemFeature("android.software.leanback")) return@withContext
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (System.currentTimeMillis() - prefs.getLong("quando", 0L) < VALIDADE_MS) return@withContext
         runCatching {
-            val fila = Destaques.filas(context).firstOrNull() ?: return@withContext
+            val filas = Destaques.filas(context)
+            if (filas.isEmpty()) return@withContext
             val ajudante = PreviewChannelHelper(context)
-            var canal = prefs.getLong("canal", -1L)
-            if (canal < 0 || runCatching { ajudante.getPreviewChannel(canal) }.getOrNull() == null) {
-                val logo = BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
-                canal = ajudante.publishDefaultChannel(
-                    PreviewChannel.Builder()
-                        .setDisplayName(fila.titulo)
-                        .setAppLinkIntentUri(Uri.parse("${BuildConfig.LINK_SCHEME}://inicio"))
-                        .setLogo(logo)
-                        .build())
-                if (canal < 0) return@withContext
-                prefs.edit().putLong("canal", canal).apply()
-            }
-            // Refaz os cartões: apaga os velhos e publica os de hoje.
-            context.contentResolver.delete(TvContractCompat.buildPreviewProgramsUriForChannel(canal), null, null)
-            fila.itens.take(20).forEachIndexed { i, item ->
-                val alvo = Alvo(item.titulo, item.serie, item.letra, item.ano,
-                    if (item.daColecao) item.colecao else "")
-                ajudante.publishPreviewProgram(
-                    PreviewProgram.Builder()
-                        .setChannelId(canal)
-                        .setType(if (item.serie) TvContractCompat.PreviewPrograms.TYPE_TV_SERIES
-                                 else TvContractCompat.PreviewPrograms.TYPE_MOVIE)
-                        .setTitle(Generos.semAno(item.titulo))
-                        .setWeight(1000 - i)
-                        .setIntentUri(Links.ficha(alvo))
-                        .setInternalProviderId(item.titulo)
-                        .apply {
-                            if (item.capa.isNotBlank()) {
-                                setPosterArtUri(Uri.parse(item.capa))
-                                setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_MOVIE_POSTER)
+            for ((series, titulo) in listOf(true to "Séries em alta", false to "Filmes em destaque")) {
+                val chave = if (series) "canal" else "filmes"
+                val itens = selecionar(filas, series)
+                if (itens.isEmpty()) continue
+                var canal = prefs.getLong(chave, -1L)
+                val existe = canal >= 0 && runCatching { ajudante.getPreviewChannel(canal) }.getOrNull() != null
+                if (existe && System.currentTimeMillis() - prefs.getLong("quando_$chave", 0L) < VALIDADE_MS) continue
+                if (!existe) {
+                    val logo = BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
+                    val novo = PreviewChannel.Builder()
+                            .setDisplayName(titulo)
+                            .setAppLinkIntentUri(Uri.parse("${BuildConfig.LINK_SCHEME}://inicio"))
+                            .setLogo(logo)
+                            .build()
+                    // Só a primeira fileira é padrão; as demais ficam em Personalizar canais.
+                    canal = if (series) ajudante.publishDefaultChannel(novo) else ajudante.publishChannel(novo)
+                    if (canal < 0) continue
+                    prefs.edit().putLong(chave, canal).apply()
+                }
+                context.contentResolver.update(TvContractCompat.buildChannelUri(canal),
+                    android.content.ContentValues().apply { put(TvContractCompat.Channels.COLUMN_DISPLAY_NAME, titulo) }, null, null)
+                // Refaz os cartões: apaga os velhos e publica os de hoje.
+                context.contentResolver.delete(TvContractCompat.buildPreviewProgramsUriForChannel(canal), null, null)
+                itens.forEachIndexed { i, item ->
+                    val alvo = Alvo(item.titulo, item.serie, item.letra, item.ano,
+                        if (item.daColecao) item.colecao else "")
+                    ajudante.publishPreviewProgram(
+                        PreviewProgram.Builder()
+                            .setChannelId(canal)
+                            .setType(if (item.serie) TvContractCompat.PreviewPrograms.TYPE_TV_SERIES
+                                     else TvContractCompat.PreviewPrograms.TYPE_MOVIE)
+                            .setTitle(Generos.semAno(item.titulo))
+                            .setWeight(1000 - i)
+                            .setIntentUri(Links.ficha(alvo))
+                            .setInternalProviderId(item.titulo)
+                            .apply {
+                                if (item.capa.isNotBlank()) {
+                                    setPosterArtUri(Uri.parse(item.capa))
+                                    setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_MOVIE_POSTER)
+                                }
+                                item.ano.toIntOrNull()?.let { setReleaseDate(it.toString()) }
                             }
-                            item.ano.toIntOrNull()?.let { setReleaseDate(it.toString()) }
-                        }
-                        .build())
+                            .build())
+                }
+                prefs.edit().putLong("quando_$chave", System.currentTimeMillis()).apply()
             }
-            prefs.edit().putLong("quando", System.currentTimeMillis()).apply()
         }.onFailure { Telemetria.erro(it) }
     }
 }
