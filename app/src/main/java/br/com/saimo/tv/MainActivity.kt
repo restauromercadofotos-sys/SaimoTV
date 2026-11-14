@@ -82,6 +82,9 @@ private const val SOLTAR_PLAYER_MS = 45_000L
 /// congela sem erro: engasgo de rede some em poucos segundos, isto não.
 private const val CONGELADO_MS = 12_000L
 
+internal fun proximaFonteOuAtual(atual: Int, total: Int): Int =
+    if (atual + 1 < total) atual + 1 else atual
+
 /**
  * The whole app: a channel list and a player, driven entirely by the remote.
  *
@@ -604,10 +607,11 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
 
         override fun onPlaybackStateChanged(state: Int) {
             if (state == Player.STATE_ENDED && tocouAvisado && !emSegundoPlano) {
-                // TV ao vivo nunca "termina". Se o player achou o fim do arquivo, a conexão caiu
-                // limpamente sem dar erro. Devemos forçar a reconexão imediatamente!
-                Log.i("SaimoTV", "fim do stream: reconectando")
-                play(current, sourceIndex, apósFalha = true)
+                // Uma fonte que entrega sempre o mesmo trecho curto termina sem
+                // erro; repeti-la prenderia o canal nesse trecho para sempre.
+                val proxima = proximaFonteOuAtual(sourceIndex, ordered.getOrNull(current)?.sources?.size ?: 0)
+                Log.i("SaimoTV", "fim do stream: fonte ${sourceIndex + 1} -> ${proxima + 1}")
+                play(current, proxima, apósFalha = true)
                 return
             }
 
@@ -658,6 +662,13 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             val categoriaMonitor = categoriaNoMonitor(channel)
             Telemetria.falhou(categoriaMonitor, channel.name, channel.sources.getOrNull(sourceIndex)?.url.orEmpty(),
                 sourceIndex + 1, error.errorCodeName)
+
+            // Reabrir o mesmo Full HD não corrige bitstream ou decodificador
+            // incompatível; outra origem pode trazer o canal em outro formato.
+            if (SegundaTela.faltaDecodificador(error) && sourceIndex + 1 < channel.sources.size) {
+                play(current, proximaFonteOuAtual(sourceIndex, channel.sources.size), apósFalha = true)
+                return
+            }
 
             val agora = android.os.SystemClock.elapsedRealtime()
             // A fonte estava entregando imagem até agora há pouco: o erro foi
