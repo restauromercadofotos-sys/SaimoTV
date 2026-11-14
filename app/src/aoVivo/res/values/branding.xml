@@ -1,0 +1,8 @@
+<resources>
+    <string name="ajustes_sobre">TV Ao vivo %1$s\nID do aparelho: %2$s\n\nBaseado no projeto SaimoTV.</string>
+    <string name="vazio_inicio">Bem-vindo ao TV Ao vivo! Configure sua lista em Ajustes.</string>
+    <string name="timer_aviso">TV Ao vivo vai fechar em 1 minuto</string>
+    <string name="busca_sistema_rotulo">TV Ao vivo</string>
+    <string name="update_permissao_texto">Para atualizar, permita que TV Ao vivo instale apps nas configurações da TV.</string>
+    <string name="update_permissao_sem_tela">Ative Fontes desconhecidas para TV Ao vivo nas configurações da TV</string>
+</resources>

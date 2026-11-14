@@ -56,8 +56,6 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
     private val handler = Handler(Looper.getMainLooper())
     private val hora = SimpleDateFormat("HH:mm", Locale("pt", "BR"))
     private var ultimoVoltar = 0L
-    private var abertura: Abertura? = null
-    private val depoisDaAbertura = mutableListOf<() -> Unit>()
 
     private val adaptador by lazy {
         Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) },
@@ -83,15 +81,6 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         filas.setItemViewCacheSize(4)
         cabecalhoPadrao()
 
-        // A abertura entra antes de tudo e a tela carrega por baixo dela.
-        if (Abertura.deveMostrar(intent, savedInstanceState)) {
-            // Fica guardada depois de acabar: a soltura da tecla que pulou
-            // ainda passa por ela.
-            abertura = Abertura(this) {
-                depoisDaAbertura.toList().forEach { it() }
-                depoisDaAbertura.clear()
-            }.also { it.mostrar() }
-        }
 
         lifecycleScope.launch(semDerrubar) {
             // Ler 990 canais do disco leva segundos num TV Box fraco: fora da
@@ -156,7 +145,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
 
     /** Roda já, ou assim que a abertura sair de cena. */
     private fun quandoAberturaAcabar(acao: () -> Unit) {
-        if (abertura?.ativa == true) depoisDaAbertura += acao else acao()
+        acao()
     }
 
     private fun cabecalhoPadrao() {
@@ -282,7 +271,6 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        abertura?.liberar()
         super.onDestroy()
     }
 
@@ -453,7 +441,6 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // Durante a abertura qualquer tecla pula, e nenhuma chega às fileiras.
-        if (abertura?.tecla(event) == true) return true
         return super.dispatchKeyEvent(event)
     }
 

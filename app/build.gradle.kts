@@ -37,7 +37,7 @@ android {
         create("aoVivo") {
             dimension = "conteudo"
             applicationIdSuffix = ".aovivo"
-            resValue("string", "app_name", "Saimo TV ao Vivo")
+            resValue("string", "app_name", "TV Ao vivo")
             resValue("string", "busca_authority", "br.com.saimo.tv.aovivo.busca")
             buildConfigField("boolean", "TV_AO_VIVO", "true")
             buildConfigField("String", "LINK_SCHEME", "\"saimo-aovivo\"")
@@ -46,7 +46,7 @@ android {
         create("filmesSeries") {
             dimension = "conteudo"
             applicationIdSuffix = ".filmes"
-            resValue("string", "app_name", "Saimo Filmes e Séries")
+            resValue("string", "app_name", "LumeFlix")
             resValue("string", "busca_authority", "br.com.saimo.tv.filmes.busca")
             buildConfigField("boolean", "TV_AO_VIVO", "false")
             buildConfigField("String", "LINK_SCHEME", "\"saimo-filmes\"")
