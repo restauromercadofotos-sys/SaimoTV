@@ -124,6 +124,7 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
     }
 
     override fun sintonizarCanal(nome: String, metade: Int?) {
+        if (!BuildConfig.TV_AO_VIVO) return
         startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_CANAL, nome))
     }
 
@@ -341,19 +342,19 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
         trabalho?.cancel()
         val termo = digitado.toString().trim()
         trabalho = lifecycleScope.launch(semDerrubar) {
-            if (!imediato) delay(280)
+            if (!imediato) delay(180)
             if (termo.isEmpty()) { mostrarInicio(); return@launch }
             val filas = mutableListOf<Inicio.Fila>()
 
             val alvoNorm = Vod.normalizar(termo)
-            val canais = MinhasListas.somar(Unlock.channels(), Unlock.unlocked).filter { Vod.normalizar(it.name).contains(alvoNorm) }.take(20)
+            val canais = if (BuildConfig.TV_AO_VIVO) MinhasListas.somar(Unlock.channels(), Unlock.unlocked).filter { Vod.normalizar(it.name).contains(alvoNorm) }.take(20) else emptyList()
             if (canais.isNotEmpty()) filas += Inicio.Fila(getString(R.string.busca_canais), canais.map { c ->
                 Inicio.Cartao(c.name, c.logo.orEmpty(), c.name.take(1).uppercase()) {
                     startActivity(Intent(this@BuscaActivity, MainActivity::class.java).putExtra(MainActivity.EXTRA_CANAL, c.name))
                 }
             }, Inicio.Tipo.LARGO)
 
-            val achados = if (termo.length >= 2) Vod.buscar(this@BuscaActivity, termo, 80) else emptyList()
+            val achados = Vod.buscar(this@BuscaActivity, termo, if (termo.length == 1) 20 else 80)
             val filmes = achados.filter { !it.serie }
             val series = achados.filter { it.serie }
             if (filmes.isNotEmpty()) filas += Inicio.Fila(getString(R.string.vod_filmes), filmes.map { cartao(it) })

@@ -43,9 +43,16 @@ object MenuGlobal {
             setPadding((40 * d).toInt(), (18 * d).toInt(), (40 * d).toInt(), (4 * d).toInt())
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
-        barra.addView(ImageView(tela).apply {
+        barra.addView(if (BuildConfig.TV_AO_VIVO) ImageView(tela).apply {
             setImageResource(R.mipmap.ic_launcher)
             layoutParams = LinearLayout.LayoutParams((28 * d).toInt(), (28 * d).toInt()).apply { marginEnd = (8 * d).toInt() }
+        } else TextView(tela).apply {
+            text = tela.getString(R.string.app_name)
+            textSize = 23f
+            typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
+            setTextColor(ContextCompat.getColor(tela, R.color.accent))
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = (22 * d).toInt() }
         })
         val rolagem = HorizontalScrollView(tela).apply {
             isHorizontalScrollBarEnabled = false
@@ -59,30 +66,28 @@ object MenuGlobal {
         rolagem.addView(abas)
         barra.addView(rolagem)
 
-        val itens = listOf(
-            Triple(Aba.BUSCAR, R.string.menu_buscar, R.drawable.ic_search),
+        val itens = if (BuildConfig.TV_AO_VIVO) listOf(
             Triple(Aba.INICIO, R.string.menu_inicio, R.drawable.ic_home),
             Triple(Aba.AO_VIVO, R.string.menu_ao_vivo, R.drawable.ic_live_tv),
             Triple(Aba.EVENTOS, R.string.menu_eventos, R.drawable.ic_football),
-            Triple(Aba.ON_DEMAND, R.string.menu_on_demand, R.drawable.ic_movie),
-            Triple(Aba.FAVORITOS, R.string.vod_favoritos, R.drawable.ic_star),
-            Triple(Aba.RADIOS, R.string.menu_radios, R.drawable.ic_radio),
-            Triple(Aba.EXTRAS, R.string.vod_extras, R.drawable.ic_more),
-            Triple(Aba.APOIE, R.string.menu_apoie, R.drawable.ic_favorite),
-            Triple(Aba.AJUSTES, R.string.menu_ajustes, R.drawable.ic_settings)
+            Triple(Aba.AJUSTES, R.string.menu_ajustes, R.drawable.ic_settings),
+        ) else listOf(
+            Triple(Aba.INICIO, R.string.menu_inicio, 0),
+            Triple(Aba.ON_DEMAND, R.string.menu_on_demand, 0),
+            Triple(Aba.FAVORITOS, R.string.vod_favoritos, 0),
+            Triple(Aba.BUSCAR, R.string.menu_buscar, R.drawable.ic_search),
+            Triple(Aba.AJUSTES, R.string.menu_ajustes, R.drawable.ic_settings),
         )
 
         for ((aba, texto, icone) in itens.filter { Conteudo.permiteAba(it.first) }) {
             abas.addView(TextView(tela).apply {
                 text = tela.getString(texto)
                 tag = aba
-                // Dez abas com a Apoie: tamanho e folga medidos para caber em 960 dp.
                 textSize = 15f
                 maxLines = 1
                 typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
                 setTextColor(ContextCompat.getColorStateList(tela, R.color.texto_botao_ficha))
-                // Apoie fica sempre em destaque, chamando atenção no menu.
-                setBackgroundResource(if (aba == Aba.APOIE) R.drawable.aba_apoie else R.drawable.aba_menu)
+                setBackgroundResource(R.drawable.aba_menu)
                 isFocusable = true
                 isSelected = aba == atual
                 // Extras só existe depois do código, e some de novo sem deixar vão.
@@ -121,7 +126,7 @@ object MenuGlobal {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = (12 * d).toInt() }
         }
-        barra.addView(relogio)
+        if (BuildConfig.TV_AO_VIVO) barra.addView(relogio)
         val hora = SimpleDateFormat("HH:mm", Locale("pt", "BR"))
         val handler = Handler(Looper.getMainLooper())
         val tique = object : Runnable {

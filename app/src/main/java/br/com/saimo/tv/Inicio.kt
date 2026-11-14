@@ -223,6 +223,11 @@ object Inicio {
             // Sem crescer no foco: o contorno do row_focus já mostra onde está,
             // e a capa aumentando empurrava as vizinhas a cada passo.
             holder.itemView.setOnFocusChangeListener { view, focado ->
+                if (!BuildConfig.TV_AO_VIVO) {
+                    view.animate().scaleX(if (focado) 1.06f else 1f)
+                        .scaleY(if (focado) 1.06f else 1f).setDuration(140).start()
+                    view.translationZ = if (focado) 12f else 0f
+                }
                 if (!focado) return@setOnFocusChangeListener
                 holder.cartao?.let { aoFocar?.invoke(it) }
                 // A fileira inteira à vista, com o nome dela — só quando o foco
@@ -247,6 +252,11 @@ object Inicio {
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val cartao = cartoes[position]
+            holder.itemView.animate().cancel()
+            val escala = if (!BuildConfig.TV_AO_VIVO && holder.itemView.hasFocus()) 1.06f else 1f
+            holder.itemView.scaleX = escala
+            holder.itemView.scaleY = escala
+            holder.itemView.translationZ = if (escala > 1f) 12f else 0f
             holder.cartao = cartao
             holder.nome.text = cartao.titulo
             holder.sub?.text = cartao.subtitulo.orEmpty()

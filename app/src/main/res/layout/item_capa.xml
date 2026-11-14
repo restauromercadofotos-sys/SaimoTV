@@ -9,11 +9,11 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="136dp"
     android:layout_height="wrap_content"
-    android:layout_margin="8dp"
+    android:layout_margin="6dp"
     android:background="@drawable/row_focus"
     android:focusable="true"
     android:orientation="vertical"
-    android:padding="6dp">
+    android:padding="4dp">
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -27,7 +27,7 @@
             android:fontFamily="sans-serif-medium"
             android:gravity="center"
             android:textColor="@color/accent"
-            android:textSize="34sp" />
+            android:textSize="30sp" />
 
         <ImageView
             android:id="@+id/capaImagem"
@@ -53,10 +53,10 @@
         android:id="@+id/capaNome"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="7dp"
+        android:layout_marginTop="6dp"
         android:ellipsize="end"
-        android:maxLines="2"
-        android:minLines="2"
+        android:maxLines="1"
+        android:minLines="1"
         android:textColor="@color/text_primary"
-        android:textSize="15sp" />
+        android:textSize="14sp" />
 </LinearLayout>

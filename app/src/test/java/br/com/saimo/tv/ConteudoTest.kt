@@ -12,6 +12,7 @@ class ConteudoTest {
             assertEquals(!tv, Conteudo.permiteAba(aba))
         }
         assertFalse(Conteudo.permiteAba(Aba.RADIOS))
+        assertFalse(Conteudo.permiteAba(Aba.APOIE))
         assertTrue(Conteudo.permiteAba(Aba.INICIO))
         assertTrue(Conteudo.permiteAba(Aba.AJUSTES))
         assertEquals(tv, Conteudo.permiteLink("canal"))

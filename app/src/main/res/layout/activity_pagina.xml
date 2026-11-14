@@ -40,20 +40,21 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="56dp"
-            android:layout_marginTop="28dp"
+            android:layout_marginTop="18dp"
             android:fontFamily="sans-serif-medium"
             android:letterSpacing="0.1"
             android:textAllCaps="true"
             android:textColor="@color/accent"
-            android:textSize="18sp" />
+            android:textSize="15sp" />
 
         <!-- O destaque: o que está focado agora. -->
         <LinearLayout
             android:id="@+id/inicioDestaque"
-            android:layout_width="620dp"
-            android:layout_height="150dp"
+            android:layout_width="560dp"
+            android:layout_height="160dp"
             android:layout_marginStart="56dp"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="8dp"
+            android:gravity="bottom"
             android:orientation="vertical">
             <TextView
                 android:id="@+id/inicioTitulo"
@@ -63,7 +64,7 @@
                 android:fontFamily="sans-serif-medium"
                 android:maxLines="1"
                 android:textColor="@color/text_primary"
-                android:textSize="32sp" />
+                android:textSize="40sp" />
             <TextView
                 android:id="@+id/inicioMeta"
                 android:layout_width="match_parent"
@@ -80,9 +81,9 @@
                 android:layout_marginTop="8dp"
                 android:ellipsize="end"
                 android:lineSpacingMultiplier="1.15"
-                android:maxLines="2"
+                android:maxLines="3"
                 android:textColor="#D9FFFFFF"
-                android:textSize="16sp" />
+                android:textSize="17sp" />
         </LinearLayout>
 
         <br.com.saimo.tv.ListaSemFuga
@@ -92,7 +93,7 @@
             android:layout_weight="1"
             android:clipChildren="true"
             android:clipToPadding="false"
-            android:paddingStart="30dp"
+            android:paddingStart="22dp"
             android:paddingBottom="120dp" />
     </LinearLayout>
 
