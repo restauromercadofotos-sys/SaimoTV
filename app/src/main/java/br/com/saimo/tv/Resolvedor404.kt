@@ -68,6 +68,10 @@ object Resolvedor404 {
 
     private val cache = ConcurrentHashMap<String, Pair<Long, Map<String, List<String>>>>()
     private val imdbCache = ConcurrentHashMap<String, String>()
+    /** URL final -> addon que a entregou, preservado para a interface do player. */
+    private val origens = ConcurrentHashMap<String, String>()
+
+    fun origem(url: String): String? = origens[url]
     private const val TTL_MS = 5 * 60 * 1000L
     private const val TMDB_KEY = "15d2ea6d0dc1d476efbca3eba2b9bbfb"
 
@@ -201,7 +205,7 @@ object Resolvedor404 {
         } else {
             mid
         }
-        return if (nome == "Hollymovies") {
+        val resultado = if (nome == "Hollymovies") {
             val crus = buscar(base, tipo, idParaUsar)
             crus.flatMap { (versao, url) ->
                 if (url.endsWith(".m3u8")) {
@@ -210,6 +214,8 @@ object Resolvedor404 {
                 } else listOf(versao to url)
             }
         } else buscar(base, tipo, idParaUsar)
+        resultado.forEach { (_, url) -> origens[url] = nome }
+        return resultado
     }
 
     // 404: passo de variante HLS (escolhe a melhor qualidade)
