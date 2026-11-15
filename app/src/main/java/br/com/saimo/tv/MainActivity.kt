@@ -1174,6 +1174,12 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     private fun escolherFonte(index: Int) {
         val canal = ordered.getOrNull(index) ?: return
         if (isFinishing || isDestroyed) return
+        // A lista e o painel lateral não cabem juntos numa TV. Fecha a lista
+        // primeiro; assim o painel recebe toda a lateral e redimensiona o vídeo.
+        if (listPanel.visibility == View.VISIBLE) {
+            closeList(mostrarFaixa = false) { escolherFonte(index) }
+            return
+        }
         val marcada = if (index == current) sourceIndex else -1
         Painel.mostrar(this, getString(R.string.fontes_titulo, canal.name), canal.sources.mapIndexed { i, fonte ->
             // Nos canais 24h cada fonte é uma temporada: o nome dela ("Temporada 3")
@@ -1181,7 +1187,6 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             Painel.Item(fonte.nome ?: getString(R.string.fontes_item_amigavel, i + 1),
                 fonte.quality?.takeUnless { it.equals("Qualidade não informada", true) },
                 marcado = i == marcada) {
-                if (listPanel.visibility == View.VISIBLE) closeList()
                 retries = 0
                 play(index, i)
             }
@@ -1906,7 +1911,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         if (listPanel.visibility == View.VISIBLE) encaixarAoLadoDaLista() else palco.soltar()
     }
 
-    private fun closeList() {
+    private fun closeList(mostrarFaixa: Boolean = true, aoFechar: (() -> Unit)? = null) {
         if (Painel.dialogVisivel() == null) palco.soltar()
         menuGlobal?.visibility = View.GONE
         findViewById<View>(R.id.multiRotulo1).alpha = 1f
@@ -1917,9 +1922,10 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             .withEndAction {
                 listPanel.visibility = View.GONE
                 listPanel.translationX = 0f
+                aoFechar?.invoke()
             }.start()
         playerView.requestFocus()
-        revealBanner()
+        if (mostrarFaixa) revealBanner()
     }
 
     private fun updateBanner() {
