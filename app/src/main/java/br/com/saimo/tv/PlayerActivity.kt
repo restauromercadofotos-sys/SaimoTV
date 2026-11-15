@@ -585,7 +585,10 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                 .build()
         } else {
             DefaultLoadControl.Builder()
-                .setBufferDurationsMs(30_000, 50_000, 2_500, 5_000)
+                // Em TV Box de 2 GB, como a Mi Box 3, 5 s para retomar fazia
+                // fontes HD entrarem no ciclo toca/carrega. Mantém uma reserva
+                // maior antes do início e principalmente após um rebuffer.
+                .setBufferDurationsMs(30_000, 60_000, 8_000, 15_000)
                 .setTargetBufferBytes(96 * 1024 * 1024)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
