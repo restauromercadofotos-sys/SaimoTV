@@ -60,7 +60,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
 
     private val adaptador by lazy {
         Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) },
-            aoFocar = { mostrarDestaque(it) })
+            aoFocar = { mostrarDestaque(it) }, paisagem = true)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

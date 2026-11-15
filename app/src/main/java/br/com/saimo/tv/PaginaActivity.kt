@@ -68,7 +68,7 @@ open class PaginaActivity : TelaComMenu() {
     private lateinit var filas: RecyclerView
     private val adaptador by lazy {
         Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) },
-            aoFocar = { destaque.mostrar(it) })
+            aoFocar = { destaque.mostrar(it) }, paisagem = true)
     }
     private lateinit var destaque: Destaque
     private var montou = false

@@ -67,13 +67,17 @@ object Inicio {
         /// Título cuja imagem larga vai ao fundo do destaque, quando o cartão
         /// não é ele mesmo um título (a categoria mostra o filme em alta).
         val fundoDe: Alvo? = null,
+        /** Backdrop TMDB já resolvido enquanto o título estava em foco. */
+        var capaLarga: String? = null,
+        /** Atualiza a imagem do holder ainda ligado a este cartão. */
+        var atualizarCapaLarga: ((String) -> Unit)? = null,
         /// Cartão de jogo: o selo do canto (placar ao vivo ou horário).
         val selo: String? = null,
         val seloAoVivo: Boolean = false,
         val aoEscolher: () -> Unit,
     )
 
-    enum class Tipo { CAPA, LARGO, SECAO, EVENTO }
+    enum class Tipo { CAPA, LARGO, SECAO, EVENTO, PAISAGEM }
 
     /**
      * O gerente da lista de fileiras: não rola sozinho quando o foco muda.
@@ -109,11 +113,14 @@ object Inicio {
         private val capaDe: (suspend (String, Boolean) -> String?)? = null,
         /// Chamado quando um cartão ganha o foco — é o que troca o destaque.
         private val aoFocar: ((Cartao) -> Unit)? = null,
+        /// Fileiras de catálogo do LumeFlix usam artes 16:9; TV/radio mantêm os layouts próprios.
+        private val paisagem: Boolean = false,
     ) : RecyclerView.Adapter<Adapter.Holder>() {
 
         private var filas: List<Fila> = emptyList()
         private val depositoCapas = RecyclerView.RecycledViewPool()
         private val depositoLargos = RecyclerView.RecycledViewPool()
+        private val depositoPaisagens = RecyclerView.RecycledViewPool()
         private val depositoSecoes = RecyclerView.RecycledViewPool()
         private val depositoEventos = RecyclerView.RecycledViewPool()
         /// Onde cada fileira estava, para voltar no mesmo lugar.
@@ -150,7 +157,10 @@ object Inicio {
             val capas: RecyclerView = view.findViewById(R.id.filaCapas)
         }
 
-        override fun getItemViewType(position: Int) = filas[position].tipo.ordinal
+        private fun tipoVisual(position: Int): Tipo =
+            if (paisagem && filas[position].tipo == Tipo.CAPA) Tipo.PAISAGEM else filas[position].tipo
+
+        override fun getItemViewType(position: Int) = tipoVisual(position).ordinal
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
             val holder = Holder(
@@ -163,6 +173,7 @@ object Inicio {
                 Tipo.LARGO.ordinal -> depositoLargos
                 Tipo.SECAO.ordinal -> depositoSecoes
                 Tipo.EVENTO.ordinal -> depositoEventos
+                Tipo.PAISAGEM.ordinal -> depositoPaisagens
                 else -> depositoCapas
             })
             holder.capas.isFocusable = false
@@ -172,7 +183,7 @@ object Inicio {
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val fila = filas[position]
             holder.titulo.text = fila.titulo
-            holder.capas.adapter = Capas(fila.cartoes, fila.tipo, escopo, capaDe, aoFocar)
+            holder.capas.adapter = Capas(fila.cartoes, tipoVisual(position), escopo, capaDe, aoFocar)
             holder.capas.scrollToPosition(posicoes[fila.titulo] ?: 0)
             holder.capas.clearOnScrollListeners()
             holder.capas.addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -217,6 +228,7 @@ object Inicio {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
             val layout = when (tipo) {
                 Tipo.LARGO -> R.layout.item_cartao_largo
+                Tipo.PAISAGEM -> R.layout.item_cartao_paisagem
                 Tipo.SECAO -> R.layout.item_secao
                 Tipo.EVENTO -> R.layout.item_evento_cartao
                 else -> R.layout.item_capa
@@ -294,6 +306,9 @@ object Inicio {
             holder.itemView.scaleX = escala
             holder.itemView.scaleY = escala
             holder.itemView.translationZ = if (escala > 1f) 12f else 0f
+            holder.cartao?.let { anterior ->
+                if (anterior !== cartao) anterior.atualizarCapaLarga = null
+            }
             holder.cartao = cartao
             holder.nome.text = cartao.titulo
             holder.sub?.text = cartao.subtitulo.orEmpty()
@@ -311,6 +326,19 @@ object Inicio {
             holder.imagem.setImageDrawable(null)
             holder.inicial.visibility = View.VISIBLE
             holder.pedido = cartao.titulo
+            if (tipo == Tipo.PAISAGEM) {
+                cartao.atualizarCapaLarga = { url ->
+                    if (holder.cartao === cartao && holder.pedido == cartao.titulo) {
+                        Cartoes.carregar(holder.imagem, holder.inicial, url)
+                    }
+                }
+                cartao.capaLarga?.let {
+                    Cartoes.carregar(holder.imagem, holder.inicial, it)
+                    return
+                }
+            } else {
+                cartao.atualizarCapaLarga = null
+            }
             val direta = cartao.capa.ifEmpty {
                 // Sem capa pronta: o arquivo de fichas quase sempre sabe, e em
                 // memória — sem ir à rede.

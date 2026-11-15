@@ -115,6 +115,10 @@ class Destaque(
                 meta.textSize.toInt(), meta.currentTextColor) else linha
             sinopse.text = ficha.sinopse
             trocarFundo(ficha.fundo)
+            ficha.fundo?.let { imagem ->
+                cartao.capaLarga = imagem
+                cartao.atualizarCapaLarga?.invoke(imagem)
+            }
         }
     }
 
