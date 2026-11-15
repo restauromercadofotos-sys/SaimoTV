@@ -676,7 +676,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         if (proxima != null) {
             fonte = proxima
             (botoes.findViewWithTag<TextView>("fonte"))?.let { b ->
-                b.text = getString(R.string.player_fonte_n, fonte + 1)
+                b.text = rotuloFonte(fonte)
                 Icones.inicio(b, R.drawable.ic_swap)
             }
             tocarFonte(posicao, pausado = aviso.visibility == View.VISIBLE)
@@ -701,7 +701,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                     opcoes = opcoes + adicionadas.map { Titulos.Opcao(versao, it) }
                     fonte = novaPos
                     (botoes.findViewWithTag<TextView>("fonte"))?.let { b ->
-                        b.text = getString(R.string.player_fonte_n, fonte + 1)
+                        b.text = rotuloFonte(fonte)
                         Icones.inicio(b, R.drawable.ic_swap)
                     }
                     tocarFonte(posicao, pausado = aviso.visibility == View.VISIBLE)
@@ -1226,7 +1226,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             botao(Titulos.rotulo(versao), "versao", R.drawable.ic_translate) { painelVersao() }
         }
         if (opcoes.size > 1) {
-            botao(getString(R.string.player_fonte_n, fonte + 1), "fonte", R.drawable.ic_swap) { painelFonte() }
+            botao(rotuloFonte(fonte), "fonte", R.drawable.ic_swap) { painelFonte() }
         }
         botao(getString(R.string.player_audio_legenda), "faixas", R.drawable.ic_subtitles) { painelFaixas() }
         botao(getString(R.string.player_qualidade), "qualidade", R.drawable.ic_hd) { painelQualidade() }
@@ -1378,10 +1378,15 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
      * abre mas está ruim — travando, em baixa qualidade, com áudio fora.
      * A troca continua do mesmo ponto.
      */
+    private fun rotuloFonte(indice: Int): String {
+        val sequencia = getString(R.string.player_fonte_n, indice + 1)
+        val nome = opcoes.getOrNull(indice)?.let(Titulos::identificadorFonte)
+        return if (nome.isNullOrBlank()) sequencia else "$sequencia • $nome"
+    }
+
     private fun painelFonte() {
         Painel.mostrar(this, getString(R.string.player_fontes), opcoes.mapIndexed { i, opcao ->
-            // "Fonte N" e a versão; o servidor nunca aparece.
-            Painel.Item(getString(R.string.player_fonte_n, i + 1),
+            Painel.Item(rotuloFonte(i),
                 Titulos.rotulo(opcao.versao),
                 marcado = i == fonte) {
                 if (i == fonte) return@Item
