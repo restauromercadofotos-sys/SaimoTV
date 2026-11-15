@@ -48,7 +48,12 @@ object Resolvedor404 {
     private val bases: List<Pair<String, String>> by lazy {
         B64.entries.mapNotNull {
             val url = decodificar(it.value)
-            if (url.startsWith("http")) it.key to url else null
+            if (url.startsWith("http")) {
+                val configurada = if (it.key == "FenixFlix")
+                    "$url/qualities=4k,1080p,720p,sd%7Caudio=dublado,legendado%7Ccatalogs=none"
+                else url
+                it.key to configurada
+            } else null
         }
     }
 
@@ -62,12 +67,13 @@ object Resolvedor404 {
     }
 
     private val cache = ConcurrentHashMap<String, Pair<Long, Map<String, List<String>>>>()
-    private val imdbCache = ConcurrentHashMap<Int, String>()
+    private val imdbCache = ConcurrentHashMap<String, String>()
     private const val TTL_MS = 5 * 60 * 1000L
     private const val TMDB_KEY = "15d2ea6d0dc1d476efbca3eba2b9bbfb"
 
     private fun obterImdbId(tmdbId: Int, serie: Boolean): String? {
-        imdbCache[tmdbId]?.let { return it }
+        val chave = "${if (serie) "tv" else "movie"}:$tmdbId"
+        imdbCache[chave]?.let { return it }
         return try {
             val endpoint = if (serie) "tv" else "movie"
             val req = Request.Builder()
@@ -79,7 +85,7 @@ object Resolvedor404 {
                 else {
                     val json = JSONObject(resp.body?.string().orEmpty())
                     val imdb = json.optString("imdb_id").takeIf { it.isNotBlank() }
-                    if (imdb != null) imdbCache[tmdbId] = imdb
+                    if (imdb != null) imdbCache[chave] = imdb
                     imdb
                 }
             }
@@ -98,7 +104,8 @@ object Resolvedor404 {
         if (tmdbId <= 0) return emptyMap()
         val tipo = if (serie) "series" else "movie"
         val mid = if (serie) "tmdb:$tmdbId:$temporada:$numero" else "tmdb:$tmdbId"
-        cache[mid]?.let { (t, v) ->
+        val chaveCache = "$tipo:$mid"
+        cache[chaveCache]?.let { (t, v) ->
             if (System.currentTimeMillis() - t < TTL_MS) return v
         }
         return withContext(Dispatchers.IO) {
@@ -142,7 +149,7 @@ object Resolvedor404 {
                 } else mapa
 
                 if (mapa.isNotEmpty()) {
-                    cache[mid] = System.currentTimeMillis() to final.filterValues { urls ->
+                    cache[chaveCache] = System.currentTimeMillis() to final.filterValues { urls ->
                         urls.none { it in cadeiaUrls }
                     }.filterValues { it.isNotEmpty() }
                 }
@@ -189,7 +196,7 @@ object Resolvedor404 {
         mid: String,
         imdbMid: String? = null
     ): List<Pair<String, String>> {
-        val idParaUsar = if (nome == "FrostStream" || base.contains("froststream")) {
+        val idParaUsar = if (nome == "FenixFlix" || nome == "FrostStream" || base.contains("froststream")) {
             imdbMid ?: mid
         } else {
             mid
