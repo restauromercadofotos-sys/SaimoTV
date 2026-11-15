@@ -71,7 +71,12 @@ object Playback {
                     embrulhado.queryParameter("url")?.takeIf { it.startsWith("http") } ?: destino
                 } else destino
             }
-        }.getOrNull()
+        }.getOrElse {
+            // Falha de transporte, TLS, DNS ou resposta inesperada não prova
+            // que o vídeo inexiste. Entrega a URL original ao ExoPlayer e deixa
+            // a tentativa usar o prazo normal antes de trocar de servidor.
+            url
+        }
 
         if (!doServidor.isNullOrBlank()) {
             return doServidor
