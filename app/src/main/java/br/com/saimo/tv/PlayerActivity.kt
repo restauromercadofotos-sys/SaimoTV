@@ -83,6 +83,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
 
         /// Fonte que não entrega imagem até aqui é fonte morta que não deu erro.
         private const val PRAZO_MS = 15_000L
+        private const val IGNORAR_EVENTO_ANTERIOR_MS = 1_500L
         private const val ESCONDER_MS = 5_000L
         private const val CONTAGEM_S = 10
         private const val ICONE_PLAY = "\u0000play"
@@ -162,6 +163,8 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     private var retomadas = 0
     private var tocou = false
     private var tentativaDesde = 0L
+    /** Janela que descarta eventos atrasados da fonte que acabou de ser trocada. */
+    private var ignorarFalhaAte = 0L
     /** Endereço que o player recebeu de fato (o `/api/stream` já resolvido). */
     private var urlTocando: String? = null
     /** Alguma fonte deste título respondeu que o vídeo não existe ainda. */
@@ -612,6 +615,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         ultimaTravada = 0L
         confirmarReducao = false
         tentativaDesde = SystemClock.elapsedRealtime()
+        ignorarFalhaAte = tentativaDesde + IGNORAR_EVENTO_ANTERIOR_MS
         mostrarCarregando(if (tentadas.isEmpty()) getString(R.string.player_abrindo)
                           else getString(R.string.player_outro_servidor))
         Telemetria.comecou("vod", nomeTelemetria(), opcao.url, fonte + 1, nova = tentadas.isEmpty())
@@ -733,6 +737,9 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
 
         override fun onPlaybackStateChanged(state: Int) {
             val p = player ?: return
+            // O mesmo listener é reutilizado. Ao trocar de mídia, o ExoPlayer
+            // ainda pode entregar o último estado da fonte anterior.
+            if (state != p.playbackState) return
             when (state) {
                 Player.STATE_READY -> {
                     handler.removeCallbacks(prazo)
@@ -770,6 +777,9 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                     // para o próximo em vez de fechar o player.
                     val duracao = p.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
                     if (p.currentPosition < 30_000 || duracao in 1 until 120_000) {
+                        // Um ENDED atrasado da fonte anterior não pode eliminar
+                        // a fonte nova antes de ela ter a chance de preparar.
+                        if (!tocou && SystemClock.elapsedRealtime() < ignorarFalhaAte) return
                         Telemetria.falhou("vod", nomeTelemetria(), opcoes.getOrNull(fonte)?.url.orEmpty(),
                             fonte + 1, "terminou em ${p.currentPosition / 1000} s")
                         proximaFonte(0)
@@ -796,6 +806,10 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
 
         override fun onPlayerError(error: PlaybackException) {
             val p = player ?: return
+            // setMediaSource pode ser seguido pelo erro enfileirado da mídia
+            // anterior. Ignora-o; se a fonte nova também falhar, o prazo normal
+            // continua ativo e fará a troca depois de uma tentativa real.
+            if (!tocou && SystemClock.elapsedRealtime() < ignorarFalhaAte) return
             handler.removeCallbacks(prazo)
             // Legenda com defeito não é fonte morta: sai a legenda, o filme
             // continua no mesmo servidor e no mesmo ponto.
