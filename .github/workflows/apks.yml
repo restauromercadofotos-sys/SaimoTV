@@ -1,10 +1,18 @@
 name: APKs de TV ao vivo e filmes
 
 on:
-  push:
-    branches: [feat/separar-tv-e-filmes]
   pull_request:
   workflow_dispatch:
+    inputs:
+      alvo:
+        description: APK que deve ser compilado
+        required: true
+        default: filmes
+        type: choice
+        options:
+          - filmes
+          - tv
+          - ambos
 
 permissions:
   contents: read
@@ -33,18 +41,28 @@ jobs:
           test -n "$CI_KEYSTORE_BASE64"
           printf '%s' "$CI_KEYSTORE_BASE64" | base64 --decode > ci-debug.jks
           printf 'storeFile=../ci-debug.jks\nstoreType=PKCS12\nstorePassword=android\nkeyAlias=apps\nkeyPassword=android\n' > keystore.properties
-      - name: Testar e compilar os dois aplicativos
-        run: >-
-          ./gradlew --no-daemon
-          :app:testAoVivoDebugUnitTest :app:testFilmesSeriesDebugUnitTest
-          :app:assembleAoVivoDebug :app:assembleFilmesSeriesDebug
+      - name: Testar e compilar o aplicativo selecionado
+        env:
+          ALVO: ${{ github.event_name == 'pull_request' && 'ambos' || inputs.alvo }}
+        run: |
+          if [ "$ALVO" = "tv" ]; then
+            ./gradlew --no-daemon :app:testAoVivoDebugUnitTest :app:assembleAoVivoDebug
+          elif [ "$ALVO" = "filmes" ]; then
+            ./gradlew --no-daemon :app:testFilmesSeriesDebugUnitTest :app:assembleFilmesSeriesDebug
+          else
+            ./gradlew --no-daemon \
+              :app:testAoVivoDebugUnitTest :app:testFilmesSeriesDebugUnitTest \
+              :app:assembleAoVivoDebug :app:assembleFilmesSeriesDebug
+          fi
       - name: APK de TV ao vivo
+        if: github.event_name == 'pull_request' || inputs.alvo == 'tv' || inputs.alvo == 'ambos'
         uses: actions/upload-artifact@v4
         with:
           name: saimo-tv-ao-vivo-debug
           path: app/build/outputs/apk/aoVivo/debug/*.apk
           if-no-files-found: error
       - name: APK de filmes e séries
+        if: github.event_name == 'pull_request' || inputs.alvo == 'filmes' || inputs.alvo == 'ambos'
         uses: actions/upload-artifact@v4
         with:
           name: saimo-filmes-series-debug
