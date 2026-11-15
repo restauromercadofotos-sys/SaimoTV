@@ -69,7 +69,7 @@ private const val SOURCE_TIMEOUT_MS = 12_000L
 /// nesses casos é pior que o defeito — recomeça o canal noutro ponto, com outro
 /// áudio, na frente de quem está assistindo. Só depois destas retomadas sem
 /// imagem é que a fonte seguinte entra.
-private const val RETOMADAS_MAX = 8
+private const val RETOMADAS_MAX = 3
 /// Por quanto tempo a fonte continua sendo tratada como viva depois do último
 /// quadro que ela entregou.
 private const val CREDITO_DE_IMAGEM_MS = 30_000L
@@ -83,7 +83,10 @@ private const val SOLTAR_PLAYER_MS = 45_000L
 private const val CONGELADO_MS = 12_000L
 
 internal fun proximaFonteOuAtual(atual: Int, total: Int): Int =
-    if (atual + 1 < total) atual + 1 else atual
+    if (atual + 1 < total) atual + 1 else -1
+
+internal fun reproducaoEstavel(desde: Long, agora: Long): Boolean =
+    desde > 0 && agora - desde >= 60_000L
 
 /**
  * The whole app: a channel list and a player, driven entirely by the remote.
@@ -279,7 +282,9 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         channels.setItemViewCacheSize(12)
         // Sem o piscar de "mudou" a cada atualização do guia: são 300 linhas.
         (channels.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
-        reorder()
+        if (intent.getStringExtra(EXTRA_RADIO_URL) == null) reorder()
+
+        if (isFinishing) { semCanais = true; return }
 
         // Sem estimativa, o ExoPlayer começa por uma variante baixa e o canal
         // abre borrado até a adaptação subir. Partindo de uma estimativa alta
@@ -397,7 +402,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(32_000, 120_000, 1_500, 5_000)
                 .setTargetBufferBytes(96 * 1024 * 1024)
-                .setPrioritizeTimeOverSizeThresholds(true)
+                .setPrioritizeTimeOverSizeThresholds(false)
                 .build()
         }
     }
@@ -479,6 +484,9 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
     }
 
     private fun play(index: Int, source: Int = 0, apósFalha: Boolean = false) {
+        cancelarReconexao()
+        if (ordered.isEmpty()) { mostrarSemCanais(); return }
+        if (emSegundoPlano || isFinishing) return
         val mudouDeFonte = current != index.coerceIn(ordered.indices) || sourceIndex != source
         val mesmoCanal = ordered.getOrNull(current)?.name == ordered.getOrNull(index.coerceIn(ordered.indices))?.name
         val novo = ordered.getOrNull(index.coerceIn(ordered.indices))?.name
@@ -506,8 +514,12 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         if (!apósFalha || mudouDeFonte) {
             retomadas = 0
         }
+        if (!apósFalha) retries = 0
         ultimaImagem = 0L
         ultimaPosicao = -1L
+        quadrosAnteriores = -1
+        estavelDesde = 0L
+        congeladoDesde = 0L
         if (!apósFalha) caiuAvisado = false
         // Falha passando para a próxima fonte, ou a reconexão do mesmo canal,
         // não é mais uma abertura; escolher canal ou fonte à mão é.
@@ -606,10 +618,15 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
 
 
         override fun onPlaybackStateChanged(state: Int) {
+            if (state == Player.STATE_BUFFERING) estavelDesde = 0L
             if (state == Player.STATE_ENDED && tocouAvisado && !emSegundoPlano) {
                 // Uma fonte que entrega sempre o mesmo trecho curto termina sem
                 // erro; repeti-la prenderia o canal nesse trecho para sempre.
                 val proxima = proximaFonteOuAtual(sourceIndex, ordered.getOrNull(current)?.sources?.size ?: 0)
+                if (proxima < 0) {
+                    ordered.getOrNull(current)?.let { canalForaDoAr(it) }
+                    return
+                }
                 Log.i("SaimoTV", "fim do stream: fonte ${sourceIndex + 1} -> ${proxima + 1}")
                 play(current, proxima, apósFalha = true)
                 return
@@ -626,8 +643,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                             sourceIndex + 1, demorou)
                     }
                 }
-                retries = 0
-                retomadas = 0
+                estavelDesde = android.os.SystemClock.elapsedRealtime()
                 ultimaImagem = android.os.SystemClock.elapsedRealtime()
                 handler.removeCallbacks(sourceTimeout)
                 status.visibility = View.GONE
@@ -646,6 +662,8 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
 
 
         override fun onPlayerError(error: PlaybackException) {
+            if (emSegundoPlano || isFinishing || ordered.isEmpty()) return
+            estavelDesde = 0L
             // Uma linha por erro, sem a pilha inteira: troca de fonte é rotina
             // e a pilha do ExoPlayer não diz nada que o código do erro não diga.
             Log.w("SaimoTV", "erro no player: ${error.errorCodeName}")
@@ -702,7 +720,12 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             }
             showStatus(getString(R.string.reconnecting))
             val delay = min(1.6.pow(retries.toDouble()) * 1000, 15_000.0).toLong()
-            handler.postDelayed({ play(current, 0) }, delay)
+            val canalEsperado = channel.name
+            reconexao = Runnable {
+                if (!emSegundoPlano && ordered.getOrNull(current)?.name == canalEsperado) {
+                    play(current, 0, apósFalha = true)
+                }
+            }.also { handler.postDelayed(it, delay) }
         }
     }
 
@@ -739,16 +762,8 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         val listOpen = listPanel.visibility == View.VISIBLE
         if (multiTela && !listOpen) teclaNaMultiTela(keyCode)?.let { return it }
         return when (keyCode) {
-            // Um toque no OK mostra o que está no ar; segurar três segundos é
-            // que abre a lista. O toque é o gesto que se dá o tempo todo, então
-            // ele fica com a ação que não tira o vídeo da frente.
-            // OK abre a lista de canais: é o que mais se faz com o controle, e
-            // o que todo app de TV faz. O cartão do canal aparece com INFO ou
-            // a cada troca; as opções (áudio, fontes, favorito) no MENU.
-            // Toque no OK: programação do canal (e, com ela na tela, as fontes).
-            // Segurar o OK: opções — é o MENU de
-            // quem não tem MENU no controle (o da Xiaomi, por exemplo). A
-            // decisão fica para quando o botão é solto (ver onKeyUp).
+            // Decidir ao soltar permite distinguir OK (canais) de segurar
+            // OK (opções), inclusive no controle da Mi Box sem tecla MENU.
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 if (numpad.visibility == View.VISIBLE) {
                     padCommit()
@@ -878,24 +893,25 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         }
     }
 
-    /**
-     * Prova de vida da fonte, do jeito que quem assiste vê.
-     *
-     * Enquanto o relógio do vídeo anda, há imagem na tela — e nenhum erro que
-     * o player cuspa no caminho justifica trocar de origem.
-     */
+    /** Confere posição e quadros renderizados: áudio sozinho não prova imagem. */
     private val vigiaDeImagem = object : Runnable {
         override fun run() {
             if (::player.isInitialized) {
                 val pos = player.currentPosition
                 val agora = android.os.SystemClock.elapsedRealtime()
+                val contadores = player.videoDecoderCounters
+                contadores?.ensureUpdated()
+                val quadros = contadores?.renderedOutputBufferCount ?: -1
+                val imagemAvancou = isModoRadio || player.videoFormat == null || quadros > quadrosAnteriores
+                quadrosAnteriores = quadros
                 // Relógio para trás é linha do tempo nova — a volta para a
                 // borda do ao vivo faz isso. Recomeça a contagem dali.
                 if (pos < ultimaPosicao - 1_000) ultimaPosicao = pos
-                if (player.isPlaying && pos > ultimaPosicao + 500) {
+                if (player.isPlaying && pos > ultimaPosicao + 500 && imagemAvancou) {
                     ultimaPosicao = pos
                     ultimaImagem = agora
-                    retomadas = 0
+                    if (estavelDesde == 0L) estavelDesde = agora
+                    if (reproducaoEstavel(estavelDesde, agora)) { retomadas = 0; retries = 0 }
                     congeladoDesde = 0L
                 } else if (tocouAvisado && player.playWhenReady &&
                     player.playbackState != Player.STATE_IDLE) {
@@ -904,6 +920,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                     // nenhum. Sem este vigia só reescolher a fonte à mão
                     // desfazia — o prazo de abertura já foi desligado.
                     if (congeladoDesde == 0L) congeladoDesde = agora
+                    estavelDesde = 0L
                     if (agora - congeladoDesde >= CONGELADO_MS) {
                         congeladoDesde = agora
                         recuperarCongelado()
@@ -918,6 +935,15 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
 
     /// Desde quando o vídeo está parado sem motivo; 0 = andando normalmente.
     private var congeladoDesde = 0L
+    private var quadrosAnteriores = -1
+    private var estavelDesde = 0L
+    private var reconexao: Runnable? = null
+
+    private fun cancelarReconexao() {
+        reconexao?.let { handler.removeCallbacks(it) }
+        reconexao = null
+        handler.removeCallbacks(sourceTimeout)
+    }
 
     /**
      * Canal congelado: primeiro pede o mesmo ponto de novo (volta para a
@@ -939,7 +965,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         if (sourceIndex + 1 < channel.sources.size) {
             play(current, sourceIndex + 1, apósFalha = true)
         } else {
-            play(current, 0, apósFalha = true)
+            canalForaDoAr(channel)
         }
     }
 
@@ -961,6 +987,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     private val sourceTimeout = Runnable {
+        if (emSegundoPlano || isFinishing) return@Runnable
         val channel = ordered.getOrNull(current) ?: return@Runnable
         val categoriaMonitor = categoriaNoMonitor(channel)
             Telemetria.falhou(categoriaMonitor, channel.name, channel.sources.getOrNull(sourceIndex)?.url.orEmpty(),
@@ -1025,8 +1052,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             if (SystemClock.elapsedRealtime() - listaAbertaEm < 400) return true
             if (okApertado) {
                 okApertado = false
-                // OK sobre o vídeo mostra a programação do canal (o rodapé); com
-                // ela já na tela, abre as fontes. A lista é na seta esquerda.
+                // A lista abre com OK, independentemente da faixa de informações.
                 if (!okSegurado && listPanel.visibility != View.VISIBLE) {
                     // Na multi tela as setas laterais trocam de metade, então
                     // a lista (da metade ativa) passa para o OK.
@@ -1035,8 +1061,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                     // do canal, aqui o da metade ativa); o segundo abre a lista,
                     // que perdeu a seta esquerda para a troca de metade.
                     if (multiTela) { if (faixaNaTela) openList() else revealBanner() }
-                    else if (faixaNaTela) escolherFonte(current)
-                    else revealBanner()
+                    else openList()
                 }
                 okSegurado = false
                 return true
@@ -1128,6 +1153,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             numeros = Categorias.ordenarFixo(ordered).mapIndexed { i, c -> c.name to i + 1 }.toMap()
         }
         adapter.numero = { numeroDe(it) }
+        if (ordered.isEmpty()) { mostrarSemCanais(); return }
         val found = ordered.indexOfFirst { it.name == playing }
         // Ao trancar com um desses no ar, o nome ficaria à vista na faixa;
         // volta para o primeiro canal comum antes de a lista encolher.
@@ -1310,6 +1336,9 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
      * tentar de novo, ou ir a um canal parecido que esteja funcionando.
      */
     private fun canalForaDoAr(canal: Channel) {
+        cancelarReconexao()
+        tocouAvisado = false
+        player.stop()
         showStatus(getString(R.string.unavailable))
         if (isFinishing || isDestroyed) return
         val secao = Categorias.de(canal)
@@ -1325,10 +1354,36 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     private fun openGuide() {
-        startActivityForResult(
-            Intent(this, GuideActivity::class.java)
-                .putExtra(GuideActivity.EXTRA_CHANNEL, ordered[current].name),
-            REQUEST_GUIDE)
+        val canal = ordered.getOrNull(current) ?: return
+        mostrarProgramacao(canal)
+    }
+
+    private fun mostrarProgramacao(canal: Channel) {
+        val agora = System.currentTimeMillis()
+        val programas = Epg.schedule(canal.name).filter { it.stop > agora }
+        val itens = listOf(
+            Painel.Item("Assistir ${canal.name}") {
+                val indice = ordered.indexOfFirst { it.name == canal.name }
+                if (indice >= 0 && (indice != current || player.playbackState == Player.STATE_IDLE)) play(indice)
+            },
+            Painel.Item("Programação de outros canais") {
+                Painel.mostrar(this, getString(R.string.guide), ordered.map { outro ->
+                    Painel.Item(outro.name, Epg.nowNext(outro.name)?.first?.title,
+                        marcado = outro.name == canal.name) { mostrarProgramacao(outro) }
+                })
+            }
+        ) + programas.map { programa ->
+            Painel.Item("${clock.format(Date(programa.start))}–${clock.format(Date(programa.stop))} · ${programa.title}",
+                listOfNotNull(programa.shortDetail, programa.description).joinToString(" · "), fecha = false) {}
+        }
+        Painel.mostrar(this, canal.name, itens,
+            if (programas.isEmpty()) "Programação indisponível. O canal continua tocando." else getString(R.string.guide))
+    }
+
+    private fun mostrarSemCanais() {
+        cancelarReconexao()
+        SemListaActivity.abrir(this, Aba.AO_VIVO)
+        finish()
     }
 
     @Deprecated("Simples o bastante para o alvo mínimo do projeto")
@@ -1870,7 +1925,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     private fun updateBanner() {
         // Na multi tela, a faixa é da metade ativa — que pode ser a direita.
         val tela2 = segunda?.takeIf { faixaDaSegunda() }
-        val channel = tela2?.canal ?: ordered[current]
+        val channel = tela2?.canal ?: ordered.getOrNull(current) ?: return
         bannerNumber.text = numeroDe(channel).takeIf { it > 0 }?.toString().orEmpty()
         val fonte = channel.sources.getOrNull(tela2?.fonteAtual ?: sourceIndex)
         // Canal 24h: qual temporada está no ar.
@@ -1961,6 +2016,9 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
 
     override fun onStop() {
         super.onStop()
+        if (semCanais || !::player.isInitialized) return
+        if (reconexao != null || player.playerError != null) playerSolto = true
+        cancelarReconexao()
         if (Connect.listener === this) Connect.listener = null
         // Fora da tela, o segundo player só gastaria memória e rede. Volta com
         // o canal da metade ativa em tela cheia, como no Mac ao abrir o acervo.
@@ -1973,6 +2031,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
 
     override fun onStart() {
         super.onStart()
+        if (semCanais || isFinishing) return
         Connect.listener = this
         Connect.notificarMudancaDeEstado()
         emSegundoPlano = false
@@ -1995,6 +2054,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             play(current, sourceIndex)
         } else if (::player.isInitialized) {
             player.playWhenReady = true
+            if (player.playbackState == Player.STATE_BUFFERING) handler.postDelayed(sourceTimeout, SOURCE_TIMEOUT_MS)
         }
         // Voltando das configurações com a permissão já ligada (nos aparelhos
         // em que o sistema não matou o app no caminho), retoma a atualização.
