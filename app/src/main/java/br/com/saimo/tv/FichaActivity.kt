@@ -110,8 +110,10 @@ class FichaActivity : TelaComMenu() {
         // O topo ocupa a primeira tela inteira; episódios, elenco e parecidos
         // aparecem rolando para baixo com o direcional.
         findViewById<View>(R.id.fichaTopo).minimumHeight =
-            (resources.displayMetrics.density * 340).toInt()
+            (resources.displayMetrics.density * if (BuildConfig.TV_AO_VIVO) 340 else 290).toInt()
         if (!BuildConfig.TV_AO_VIVO) {
+            assistir.setBackgroundResource(R.drawable.acao_lumeflix)
+            assistir.setTextColor(android.graphics.Color.BLACK)
             findViewById<View>(R.id.fichaCapaGrupo).visibility = View.GONE
             findViewById<LinearLayout>(R.id.fichaInfo).apply {
                 val parametros = layoutParams as LinearLayout.LayoutParams
@@ -260,7 +262,7 @@ class FichaActivity : TelaComMenu() {
                 tag = t
                 textSize = 17f
                 setTextColor(androidx.core.content.ContextCompat.getColorStateList(context, R.color.texto_botao_ficha))
-                setBackgroundResource(R.drawable.botao_player)
+                setBackgroundResource(if (BuildConfig.TV_AO_VIVO) R.drawable.botao_player else R.drawable.temporada_lume)
                 isFocusable = true
                 val d = resources.displayMetrics.density
                 setPadding((20 * d).toInt(), (8 * d).toInt(), (20 * d).toInt(), (8 * d).toInt())
@@ -380,6 +382,16 @@ class FichaActivity : TelaComMenu() {
             visibility = if (ficha.generos.isEmpty()) View.GONE else View.VISIBLE
         }
         findViewById<TextView>(R.id.fichaSinopse).text = ficha.sinopse
+        if (!BuildConfig.TV_AO_VIVO) {
+            findViewById<TextView>(R.id.fichaSinopse).apply {
+                contentDescription = ficha.sinopse + ". OK para ler a sinopse completa."
+                setOnClickListener {
+                    android.app.AlertDialog.Builder(this@FichaActivity)
+                        .setTitle(ficha.titulo).setMessage(ficha.sinopse)
+                        .setPositiveButton(android.R.string.ok, null).show()
+                }
+            }
+        }
 
         val creditos = listOfNotNull(
             ficha.assinatura.takeIf { it.isNotBlank() }?.let {

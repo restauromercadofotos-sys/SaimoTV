@@ -173,6 +173,11 @@ object Detalhes {
             ano = data.take(4),
             generos = json.optJSONArray("genres")?.let { lista ->
                 (0 until lista.length()).mapNotNull { lista.optJSONObject(it)?.optString("name") }
+                    .map { when (it) {
+                        "Sci-Fi & Fantasy" -> "Ficção científica e fantasia"
+                        "Action & Adventure" -> "Ação e aventura"
+                        else -> it
+                    } }
             }.orEmpty(),
             assinatura = assinatura,
             roteiro = roteiro.distinct().take(2).joinToString(", "),

@@ -8,15 +8,33 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/transparent"
+    android:background="#101010"
     android:clipChildren="false">
 
+    <ScrollView
+        android:id="@+id/fichaRolagem"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipChildren="false"
+        android:descendantFocusability="afterDescendants"
+        android:fillViewport="true"
+        android:focusable="false"
+        android:scrollbars="none">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:orientation="vertical"
+        android:paddingStart="28dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="28dp"
+        android:paddingBottom="40dp">
+
+        <FrameLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/painel_banner" android:clipToOutline="true">
     <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="350dp"
-        android:layout_marginStart="32dp"
-        android:layout_marginEnd="32dp"
-        android:layout_marginTop="12dp"
+        android:layout_height="match_parent"
         android:background="@drawable/painel_banner"
         android:clipToOutline="true">
     <ImageView
@@ -39,31 +57,12 @@
 
     </FrameLayout>
 
-    <ScrollView
-        android:id="@+id/fichaRolagem"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:clipChildren="false"
-        android:descendantFocusability="afterDescendants"
-        android:fillViewport="true"
-        android:focusable="false"
-        android:scrollbars="none">
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:clipChildren="false"
-        android:clipToPadding="false"
-        android:orientation="vertical"
-        android:paddingStart="52dp"
-        android:paddingTop="32dp"
-        android:paddingEnd="52dp"
-        android:paddingBottom="40dp">
-
         <LinearLayout
             android:id="@+id/fichaTopo"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minHeight="340dp"
+            android:minHeight="290dp"
+            android:padding="20dp"
             android:clipChildren="false"
             android:orientation="horizontal">
 
@@ -158,7 +157,7 @@
                     <TextView
                         android:id="@+id/fichaAssistir"
                         android:layout_width="wrap_content"
-                        android:layout_height="52dp"
+                        android:layout_height="44dp"
                         android:background="@drawable/botao_ficha"
                         android:focusable="true"
                         android:fontFamily="sans-serif-medium"
@@ -172,7 +171,7 @@
                     <TextView
                         android:id="@+id/fichaVersao"
                         android:layout_width="wrap_content"
-                        android:layout_height="52dp"
+                        android:layout_height="44dp"
                         android:layout_marginStart="14dp"
                         android:background="@drawable/botao_ficha"
                         android:focusable="true"
@@ -187,7 +186,7 @@
                     <TextView
                         android:id="@+id/fichaFavoritar"
                         android:layout_width="wrap_content"
-                        android:layout_height="52dp"
+                        android:layout_height="44dp"
                         android:layout_marginStart="14dp"
                         android:background="@drawable/botao_ficha"
                         android:focusable="true"
@@ -205,8 +204,10 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"
                     android:ellipsize="end"
-                    android:lineSpacingMultiplier="1.2"
-                    android:maxLines="4"
+                    android:lineSpacingMultiplier="1.1"
+                    android:maxLines="3"
+                    android:focusable="true"
+                    android:background="@drawable/row_focus"
                     android:textColor="#E6FFFFFF"
                     android:textSize="17sp" />
 
@@ -214,6 +215,8 @@
 
             </LinearLayout>
         </LinearLayout>
+
+        </FrameLayout>
 
         <!-- Episódios da série: temporadas em pílulas, episódios em cartões. -->
         <LinearLayout
@@ -247,7 +250,7 @@
                 android:id="@+id/fichaEpisodios"
                 android:descendantFocusability="afterDescendants"
                 android:layout_width="match_parent"
-                android:layout_height="262dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:clipChildren="false"
                 android:clipToPadding="false"

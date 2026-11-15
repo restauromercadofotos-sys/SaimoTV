@@ -255,7 +255,7 @@ abstract class TelaComMenu : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.setBackgroundDrawableResource(R.drawable.fundo_app)
+        window.setBackgroundDrawableResource(if (BuildConfig.TV_AO_VIVO) R.drawable.fundo_app else R.drawable.fundo_lumeflix)
     }
 
     override fun onResume() {

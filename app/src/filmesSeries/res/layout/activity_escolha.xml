@@ -75,12 +75,12 @@
                 android:layout_width="144dp"
                 android:layout_height="44dp"
                 android:layout_marginTop="12dp"
-                android:background="@drawable/botao_ficha"
+                android:background="@drawable/acao_lumeflix"
                 android:focusable="true"
                 android:gravity="center"
                 android:fontFamily="sans-serif-medium"
                 android:text="Assistir"
-                android:textColor="@color/texto_botao_ficha"
+                android:textColor="#101010"
                 android:textSize="16sp"
                 android:visibility="gone" />
             <TextView
