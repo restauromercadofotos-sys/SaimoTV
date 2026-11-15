@@ -48,7 +48,7 @@ object MenuGlobal {
             layoutParams = LinearLayout.LayoutParams((28 * d).toInt(), (28 * d).toInt()).apply { marginEnd = (8 * d).toInt() }
         } else TextView(tela).apply {
             text = tela.getString(R.string.app_name)
-            textSize = 23f
+            textSize = 21f
             typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
             setTextColor(ContextCompat.getColor(tela, R.color.accent))
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -83,7 +83,7 @@ object MenuGlobal {
             abas.addView(TextView(tela).apply {
                 text = tela.getString(texto)
                 tag = aba
-                textSize = 15f
+                textSize = if (BuildConfig.TV_AO_VIVO) 15f else 14f
                 maxLines = 1
                 typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
                 setTextColor(ContextCompat.getColorStateList(tela, R.color.texto_botao_ficha))

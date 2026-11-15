@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="210dp" android:layout_height="126dp"
+    android:layout_margin="8dp" android:padding="4dp"
+    android:background="@drawable/row_focus" android:focusable="true">
+    <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/painel_banner" android:clipToOutline="true">
+        <TextView android:id="@+id/capaInicial" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:textSize="34sp" android:textColor="@color/accent" />
+        <ImageView android:id="@+id/capaImagem" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:contentDescription="@null" android:visibility="gone" />
+        <View android:layout_width="match_parent" android:layout_height="56dp" android:layout_gravity="bottom" android:background="@drawable/bg_destaque_baixo" />
+        <ImageView android:id="@+id/capaLogo" android:layout_width="144dp" android:layout_height="40dp" android:layout_gravity="bottom|start" android:layout_margin="12dp" android:scaleType="fitStart" android:contentDescription="@null" android:visibility="gone" />
+        <TextView android:id="@+id/capaNome" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="bottom" android:padding="12dp" android:maxLines="2" android:ellipsize="end" android:textColor="@color/text_primary" android:textSize="14sp" android:fontFamily="sans-serif-medium" />
+        <ProgressBar android:id="@+id/capaProgresso" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="4dp" android:layout_gravity="bottom" android:max="1000" android:progressDrawable="@drawable/progress_track" android:visibility="gone" />
+    </FrameLayout>
+</FrameLayout>

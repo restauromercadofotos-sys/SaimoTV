@@ -57,6 +57,9 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
     private val hora = SimpleDateFormat("HH:mm", Locale("pt", "BR"))
     private var ultimoVoltar = 0L
     private var temDestaque = false
+    private var cartaoDestaque: Inicio.Cartao? = null
+    private var assistir: TextView? = null
+    private var informacoes: TextView? = null
 
     private val adaptador by lazy {
         Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) },
@@ -76,6 +79,35 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         titulo = findViewById(R.id.inicioTitulo)
         meta = findViewById(R.id.inicioMeta)
         sinopse = findViewById(R.id.inicioSinopse)
+        assistir = findViewById<TextView>(R.id.inicioAssistir)?.apply {
+            Icones.inicio(this, R.drawable.ic_play)
+            setOnClickListener {
+                cartaoDestaque?.alvo?.let { PlayerActivity.abrir(this@EscolhaActivity, it) }
+            }
+            setOnKeyListener { _, codigo, evento ->
+                if (evento.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                when (codigo) {
+                    KeyEvent.KEYCODE_DPAD_DOWN -> { focarPrimeiro(); true }
+                    KeyEvent.KEYCODE_DPAD_UP -> { MenuGlobal.focar(barraMenu, Aba.INICIO); true }
+                    else -> false
+                }
+            }
+        }
+
+        informacoes = findViewById<TextView>(R.id.inicioInformacoes)?.apply {
+            Icones.inicio(this, R.drawable.ic_info)
+            setOnClickListener { cartaoDestaque?.alvo?.let { FichaActivity.abrir(this@EscolhaActivity, it) } }
+            setOnKeyListener { _, codigo, evento ->
+                if (evento.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                when (codigo) {
+                    KeyEvent.KEYCODE_DPAD_DOWN -> { focarPrimeiro(); true }
+                    KeyEvent.KEYCODE_DPAD_UP -> { MenuGlobal.focar(barraMenu, Aba.INICIO); true }
+                    else -> false
+                }
+            }
+        }
+        assistir?.nextFocusRightId = R.id.inicioInformacoes
+        informacoes?.nextFocusLeftId = R.id.inicioAssistir
 
         filas.layoutManager = Inicio.Filas(this)
         filas.adapter = adaptador
@@ -150,6 +182,9 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
     }
 
     private fun cabecalhoPadrao() {
+        cartaoDestaque = null
+        assistir?.visibility = View.GONE
+        informacoes?.visibility = View.GONE
         painelDestaque.padrao(saudacao(), getString(R.string.escolha_titulo))
         sinopse.text = getString(if (Vr.ativo) R.string.vr_inicio_dica else R.string.inicio_dica)
     }
@@ -220,7 +255,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
             KeyEvent.KEYCODE_DPAD_DOWN -> {
                 val focado = currentFocus
                 if (focado == null || MenuGlobal.temFoco(barraMenu)) {
-                    focarPrimeiro()
+                    if (assistir?.visibility == View.VISIBLE) assistir?.requestFocus() else focarPrimeiro()
                     return true
                 }
                 val proximo = focado.focusSearch(View.FOCUS_DOWN)
@@ -438,6 +473,9 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
 
     private fun mostrarDestaque(cartao: Inicio.Cartao) {
         temDestaque = true
+        cartaoDestaque = cartao
+        assistir?.visibility = if (cartao.alvo != null) View.VISIBLE else View.GONE
+        informacoes?.visibility = assistir?.visibility ?: View.GONE
         painelDestaque.mostrar(cartao)
     }
 

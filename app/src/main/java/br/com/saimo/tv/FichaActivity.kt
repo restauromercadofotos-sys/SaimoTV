@@ -110,15 +110,15 @@ class FichaActivity : TelaComMenu() {
         // O topo ocupa a primeira tela inteira; episódios, elenco e parecidos
         // aparecem rolando para baixo com o direcional.
         findViewById<View>(R.id.fichaTopo).minimumHeight =
-            (resources.displayMetrics.heightPixels * if (alvo.serie) 0.58f else 0.66f).toInt()
-        if (alvo.serie) {
+            (resources.displayMetrics.density * 340).toInt()
+        if (!BuildConfig.TV_AO_VIVO) {
             findViewById<View>(R.id.fichaCapaGrupo).visibility = View.GONE
             findViewById<LinearLayout>(R.id.fichaInfo).apply {
                 val parametros = layoutParams as LinearLayout.LayoutParams
                 parametros.marginStart = 0
                 layoutParams = parametros
             }
-            findViewById<TextView>(R.id.fichaTitulo).textSize = 42f
+            findViewById<TextView>(R.id.fichaTitulo).textSize = 32f
         }
         findViewById<View>(R.id.fichaVersao).setOnFocusChangeListener(crescerNoFoco)
         findViewById<RecyclerView>(R.id.fichaEpisodios).apply {

@@ -12,6 +12,9 @@ import androidx.recyclerview.widget.RecyclerView
 import coil3.dispose
 import coil3.load
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Fileiras de capa, como numa TV: a tela inicial, os resultados da busca.
@@ -25,6 +28,8 @@ import kotlinx.coroutines.launch
  * - as capas ficam em disco: rolar para baixo e voltar não baixa de novo.
  */
 object Inicio {
+
+    private val pedidosDeArte = Semaphore(3)
 
     internal fun indiceNaFilaVertical(indiceAtual: Int, totalDestino: Int): Int =
         if (totalDestino <= 0) -1 else if (indiceAtual in 0 until totalDestino) indiceAtual else 0
@@ -210,6 +215,8 @@ object Inicio {
             val imagem: ImageView = view.findViewById(R.id.capaImagem)
             val inicial: TextView = view.findViewById(R.id.capaInicial)
             val nome: TextView = view.findViewById(R.id.capaNome)
+            val logo: ImageView? = view.findViewById(R.id.capaLogo)
+            var arteJob: Job? = null
             val sub: TextView? = view.findViewById(R.id.capaSub)
             val progresso: ProgressBar = view.findViewById(R.id.capaProgresso)
             val colagem: List<ImageView> = listOfNotNull(
@@ -239,8 +246,8 @@ object Inicio {
             // e a capa aumentando empurrava as vizinhas a cada passo.
             holder.itemView.setOnFocusChangeListener { view, focado ->
                 if (!BuildConfig.TV_AO_VIVO) {
-                    view.animate().scaleX(if (focado) 1.06f else 1f)
-                        .scaleY(if (focado) 1.06f else 1f).setDuration(140).start()
+                    view.animate().scaleX(if (focado) 1.025f else 1f)
+                        .scaleY(if (focado) 1.025f else 1f).setDuration(140).start()
                     view.translationZ = if (focado) 12f else 0f
                 }
                 if (!focado) return@setOnFocusChangeListener
@@ -301,8 +308,14 @@ object Inicio {
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val cartao = cartoes[position]
+            holder.arteJob?.cancel()
+            holder.logo?.dispose()
+            holder.logo?.setImageDrawable(null)
+            holder.logo?.visibility = View.GONE
+            holder.nome.visibility = View.VISIBLE
+            holder.itemView.contentDescription = cartao.titulo
             holder.itemView.animate().cancel()
-            val escala = if (!BuildConfig.TV_AO_VIVO && holder.itemView.hasFocus()) 1.06f else 1f
+            val escala = if (!BuildConfig.TV_AO_VIVO && holder.itemView.hasFocus()) 1.025f else 1f
             holder.itemView.scaleX = escala
             holder.itemView.scaleY = escala
             holder.itemView.translationZ = if (escala > 1f) 12f else 0f
@@ -327,6 +340,28 @@ object Inicio {
             holder.inicial.visibility = View.VISIBLE
             holder.pedido = cartao.titulo
             if (tipo == Tipo.PAISAGEM) {
+                cartao.alvo?.let { alvo ->
+                    holder.arteJob = escopo?.launch(semDerrubar) {
+                        val ficha = pedidosDeArte.withPermit {
+                            Detalhes.de(alvo.titulo, alvo.serie, alvo.tmdbId.takeIf { it > 0 })
+                        } ?: return@launch
+                        if (holder.cartao !== cartao) return@launch
+                        ficha.fundo?.let { url ->
+                            cartao.capaLarga = url
+                            Cartoes.carregar(holder.imagem, holder.inicial, url)
+                        }
+                        ficha.logo?.let { url ->
+                            holder.logo?.load(url) {
+                                listener(onSuccess = { _, _ ->
+                                    if (holder.cartao === cartao) {
+                                        holder.logo?.visibility = View.VISIBLE
+                                        holder.nome.visibility = View.GONE
+                                    }
+                                })
+                            }
+                        }
+                    }
+                }
                 cartao.atualizarCapaLarga = { url ->
                     if (holder.cartao === cartao && holder.pedido == cartao.titulo) {
                         Cartoes.carregar(holder.imagem, holder.inicial, url)
@@ -395,6 +430,14 @@ object Inicio {
                 }
                 imageTintList = android.content.res.ColorStateList.valueOf(0xFF0B0E14.toInt())
             }
+        }
+
+        override fun onViewRecycled(holder: Holder) {
+            holder.arteJob?.cancel()
+            holder.logo?.dispose()
+            holder.cartao?.atualizarCapaLarga = null
+            holder.cartao = null
+            super.onViewRecycled(holder)
         }
 
         override fun getItemCount() = cartoes.size
