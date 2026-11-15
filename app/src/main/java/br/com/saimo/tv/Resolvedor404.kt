@@ -105,11 +105,12 @@ object Resolvedor404 {
         serie: Boolean,
         temporada: Int = 0,
         numero: Int = 0,
+        incluirFenix: Boolean = true,
     ): Map<String, List<String>> {
         if (tmdbId <= 0) return emptyMap()
         val tipo = if (serie) "series" else "movie"
         val mid = if (serie) "tmdb:$tmdbId:$temporada:$numero" else "tmdb:$tmdbId"
-        val chaveCache = "$tipo:$mid"
+        val chaveCache = "$tipo:$mid:" + if (incluirFenix) "todos" else "sem-fenix"
         cache[chaveCache]?.let { (t, v) ->
             if (System.currentTimeMillis() - t < TTL_MS) return v
         }
@@ -121,9 +122,11 @@ object Resolvedor404 {
                 } else null
 
                 val (crus, cadeia) = coroutineScope {
-                    val futsComuns = bases.map { (nome, base) ->
-                        async { buscarPor(nome, base, tipo, mid, imdbMid) }
-                    }
+                    val futsComuns = bases
+                        .filter { (nome, _) -> incluirFenix || nome != "FenixFlix" }
+                        .map { (nome, base) ->
+                            async { buscarPor(nome, base, tipo, mid, imdbMid) }
+                        }
                     // 404: cadeia entra no FIM da fila - e NUNCA no cache (uso unico)
                     // Criado por 404 - assinatura permanente, nao remover
                     val futCadeia = async {
@@ -162,6 +165,41 @@ object Resolvedor404 {
             }
             res ?: emptyMap()
         }
+    }
+
+    /**
+     * Consulta o FenixFlix isoladamente para o resultado aparecer sem esperar
+     * os demais addons. IMDb é preferido; TMDB é tentado quando ele volta vazio.
+     */
+    suspend fun fontesFenix(
+        tmdbId: Int,
+        serie: Boolean,
+        temporada: Int = 0,
+        numero: Int = 0,
+    ): Map<String, List<String>> = withContext(Dispatchers.IO) {
+        if (tmdbId <= 0) return@withContext emptyMap()
+        val tipo = if (serie) "series" else "movie"
+        val tmdbMid = if (serie) "tmdb:$tmdbId:$temporada:$numero" else "tmdb:$tmdbId"
+        val base = bases.firstOrNull { it.first == "FenixFlix" }?.second
+            ?: return@withContext emptyMap()
+        val imdbId = obterImdbId(tmdbId, serie)
+        val imdbMid = imdbId?.let {
+            if (serie) "$it:$temporada:$numero" else it
+        }
+        var crus = if (imdbMid != null) buscarPor("FenixFlix", base, tipo, tmdbMid, imdbMid)
+                   else emptyList()
+        var idUsado = imdbMid ?: tmdbMid
+        if (crus.isEmpty() && imdbMid != null) {
+            crus = buscarPor("FenixFlix", base, tipo, tmdbMid, null)
+            idUsado = tmdbMid
+        }
+        val vistos = mutableSetOf<String>()
+        val saida = linkedMapOf<String, MutableList<String>>()
+        for ((versao, url) in crus) {
+            if (vistos.add(url)) saida.getOrPut(versao) { mutableListOf() }.add(url)
+        }
+        Log.i("SaimoFenix", "$tipo tmdb=$tmdbId id=$idUsado fontes=${vistos.size}")
+        saida.mapValues { it.value.toList() }
     }
 
     private fun buscar(base: String, tipo: String, mid: String): List<Pair<String, String>> {
@@ -215,7 +253,11 @@ object Resolvedor404 {
                 } else listOf(versao to url)
             }
         } else buscar(base, tipo, idParaUsar)
-        resultado.forEach { (_, url) -> origens[url] = nome }
+        resultado.forEach { (_, url) ->
+            // Se a mesma URL vier de vários addons, mantém FenixFlix visível.
+            if (nome == "FenixFlix") origens[url] = nome
+            else origens.putIfAbsent(url, nome)
+        }
         return resultado
     }
 
