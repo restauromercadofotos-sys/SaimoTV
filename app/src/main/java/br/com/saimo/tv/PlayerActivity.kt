@@ -419,10 +419,32 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         montarBotoes()
         carregarMarcas()
         carregarLegendas()
+        carregarFontesComplementares(r)
 
         val retomar = if (startTime > 0) startTime * 1000L else if (pedirRetomada) Progresso.posicao(this, r.chave(ep)) else 0L
         tocarFonte(inicio = retomar, pausado = (startTime <= 0 && retomar > 0))
         if (startTime <= 0 && retomar > 0) perguntarRetomada(retomar)
+    }
+
+    /** Consulta addons enquanto o vídeo do catálogo já pode carregar. */
+    private var consultaFontes = 0L
+
+    private fun carregarFontesComplementares(r: Titulos.Resolvido) {
+        val consulta = ++consultaFontes
+        val episodio = ep
+        if (r.tmdbId <= 0 || r.reservado) return
+        lifecycleScope.launch(semDerrubar) {
+            val extras = Resolvedor404.fontes(
+                r.tmdbId, r.serie, episodio?.temporada ?: 0, episodio?.numero ?: 0
+            )
+            if (consulta != consultaFontes || resolvido?.chave(ep) != r.chave(episodio)) return@launch
+            val conhecidas = opcoes.map { it.url }.toMutableSet()
+            val novas = Titulos.ordem(extras, versao).filter { conhecidas.add(it.url) }
+            if (novas.isEmpty()) return@launch
+            opcoes = opcoes + novas
+            // Mantém a fonte atual e sua posição. O botão lê a lista atualizada.
+            montarBotoes()
+        }
     }
 
     private fun atualizarTitulos() {
