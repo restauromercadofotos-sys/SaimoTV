@@ -183,6 +183,10 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     private var proximoDispensado = false
     private var contagem = -1
     private var travadas = 0
+    private var ultimaTravada = 0L
+    private var ignorarBufferAte = 0L
+    private var confirmarReducao = false
+    private var duracaoAnterior = 0L
     private var travouDesde = 0L
     private var reduziu = false
 
@@ -585,6 +589,12 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         }
 
     private fun tocarFonte(inicio: Long, pausado: Boolean = false) {
+        if (emSegundoPlano) {
+            posicaoEmSegundoPlano = inicio
+            reproduziaAntes = !pausado
+            playerLiberado = true
+            return
+        }
         val opcao = opcoes.getOrNull(fonte) ?: run { desistir(); return }
         if (ep != null) {
             preferidaServidor = Titulos.servidor(opcao.url)
@@ -597,6 +607,10 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         }
         tocou = false
         retomadas = 0
+        travadas = 0
+        travouDesde = 0L
+        ultimaTravada = 0L
+        confirmarReducao = false
         tentativaDesde = SystemClock.elapsedRealtime()
         mostrarCarregando(if (tentadas.isEmpty()) getString(R.string.player_abrindo)
                           else getString(R.string.player_outro_servidor))
@@ -630,7 +644,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         urlTocando = url
         atual.setMediaSource(fonteAtual(url))
         if (inicio > 0) atual.seekTo(inicio)
-        atual.playWhenReady = !pausado
+        atual.playWhenReady = !pausado && !emSegundoPlano
         atual.prepare()
     }
 
@@ -642,13 +656,14 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     /** Fonte que não abriu no prazo: vai para a seguinte. */
     private val prazo = Runnable {
         val p = player ?: return@Runnable
-        if (tocou || p.playbackState == Player.STATE_READY) return@Runnable
+        if (emSegundoPlano || (urlTocando != null && p.playbackState == Player.STATE_READY)) return@Runnable
         Telemetria.falhou("vod", nomeTelemetria(), opcoes.getOrNull(fonte)?.url.orEmpty(), fonte + 1,
             "sem imagem em ${PRAZO_MS / 1000} s")
         proximaFonte(p.currentPosition)
     }
 
     private fun proximaFonte(posicao: Long) {
+        player?.duration?.takeIf { it > 0 }?.let { duracaoAnterior = it }
         tentadas += fonte
         val proxima = opcoes.indices.firstOrNull { it !in tentadas }
         if (proxima != null) {
@@ -706,6 +721,10 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
 
     private val ouvinte = object : Player.Listener {
         override fun onVideoSizeChanged(videoSize: VideoSize) {
+            if (confirmarReducao && videoSize.height in 1..720) {
+                confirmarReducao = false
+                Toast.makeText(this@PlayerActivity, R.string.player_qualidade_reduzida, Toast.LENGTH_LONG).show()
+            }
             var rotulo = rotuloResolucao(videoSize.width, videoSize.height).substringAfter(" · ")
             if (rotulo.isNotBlank()) rotulo += Upscaling.sufixoResolucao(videoSize.height)
             resolucao.text = rotulo
@@ -718,8 +737,18 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                 Player.STATE_READY -> {
                     handler.removeCallbacks(prazo)
                     esconderCarregando()
-                    if (travouDesde > 0 && SystemClock.elapsedRealtime() - travouDesde > 5_000) travadas++
+                    val agora = SystemClock.elapsedRealtime()
+                    if (travouDesde > 0 && agora - travouDesde > 5_000) {
+                        travadas = if (agora - ultimaTravada <= 120_000) travadas + 1 else 1
+                        ultimaTravada = agora
+                    }
                     travouDesde = 0
+                    if (duracaoAnterior > 0 && p.duration > 0) {
+                        if (kotlin.math.abs(p.duration - duracaoAnterior) > 60_000) {
+                            Toast.makeText(this@PlayerActivity, "Esta fonte tem duração diferente. Confira o ponto de retomada e ajuste com as setas.", Toast.LENGTH_LONG).show()
+                        }
+                        duracaoAnterior = 0L
+                    }
                     if (travadas >= 2 && !reduziu && !Preferencias.economia) reduzirQualidade()
                     if (!tocou) {
                         tocou = true
@@ -728,8 +757,11 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                         if (base.visibility != View.VISIBLE && aviso.visibility != View.VISIBLE) mostrarControles()
                     }
                 }
-                Player.STATE_BUFFERING -> if (tocou) {
-                    travouDesde = SystemClock.elapsedRealtime()
+                Player.STATE_BUFFERING -> if (tocou && p.playWhenReady) {
+                    val agora = SystemClock.elapsedRealtime()
+                    if (agora >= ignorarBufferAte) travouDesde = agora
+                    handler.removeCallbacks(prazo)
+                    handler.postDelayed(prazo, PRAZO_MS)
                     mostrarCarregando(getString(R.string.player_carregando))
                 }
                 Player.STATE_ENDED -> {
@@ -747,13 +779,19 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                 }
                 else -> Unit
             }
-            if (p.isPlaying) retomadas = 0
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             video.keepScreenOn = isPlaying
             atualizarBotaoPausa()
             if (!isPlaying) guardar()
+        }
+
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                travouDesde = 0L
+                ignorarBufferAte = SystemClock.elapsedRealtime() + 5_000
+            }
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -774,13 +812,15 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             // Já tocava: é tropeço da origem, não fonte morta. Pede de novo o
             // mesmo pedaço antes de trocar de servidor — trocar recomeça noutro
             // ponto, às vezes com outro áudio.
-            if (tocou && retomadas < 3) {
+            val erroDeRede = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+            if (tocou && erroDeRede && retomadas < 3) {
                 retomadas++
                 mostrarCarregando(getString(R.string.player_reconectando))
                 val ponto = p.currentPosition
                 p.seekTo(ponto)
                 p.prepare()
-                p.playWhenReady = true
+                p.playWhenReady = !emSegundoPlano
                 handler.postDelayed(prazo, PRAZO_MS)
                 return
             }
@@ -1303,6 +1343,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                 versao = v
                 Preferencias.versao = v
                 val ponto = player?.currentPosition ?: 0L
+                duracaoAnterior = player?.duration?.takeIf { it > 0 } ?: 0L
                 opcoes = Titulos.ordem(fontes, versao)
                 fonte = 0
                 tentadas.clear(); semVideo = false
@@ -1358,9 +1399,17 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     /** Duas travadas longas seguidas: a internet não dá conta, desce para HD. */
     private fun reduzirQualidade() {
         val p = player ?: return
+        val alturaAtual = p.videoFormat?.height ?: return
+        if (alturaAtual <= 720) return
+        val temHd = p.currentTracks.groups.any { grupo ->
+            grupo.type == C.TRACK_TYPE_VIDEO && (0 until grupo.length).any {
+                grupo.isTrackSupported(it) && grupo.getTrackFormat(it).height in 1..720
+            }
+        }
+        if (!temHd) return
         reduziu = true
+        confirmarReducao = true
         limitarQualidade(p)
-        android.widget.Toast.makeText(this, R.string.player_qualidade_reduzida, android.widget.Toast.LENGTH_LONG).show()
     }
 
     private fun aplicarLegendaPreferida(p: ExoPlayer) {
@@ -1446,8 +1495,33 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         return super.onKeyDown(keyCode, event)
     }
 
+    private var posicaoEmSegundoPlano = 0L
+    private var emSegundoPlano = false
+    private var reproduziaAntes = false
+    private var playerLiberado = false
+    private val liberarEmSegundoPlano = Runnable {
+        if (player == null) return@Runnable
+        tentativaDesde = -1L
+        sessao?.release()
+        sessao = null
+        player?.let { AudioInteligente.liberar(it); it.release() }
+        video.player = null
+        player = null
+        playerLiberado = true
+    }
+
     override fun onStart() {
         super.onStart()
+        val voltando = emSegundoPlano
+        emSegundoPlano = false
+        handler.removeCallbacks(liberarEmSegundoPlano)
+        if (playerLiberado) {
+            playerLiberado = false
+            tocarFonte(posicaoEmSegundoPlano, pausado = !reproduziaAntes)
+        } else if (voltando) {
+            player?.playWhenReady = reproduziaAntes
+            if (player?.playbackState != Player.STATE_READY) handler.postDelayed(prazo, PRAZO_MS)
+        }
         Connect.listener = this
         Connect.notificarMudancaDeEstado()
     }
@@ -1456,7 +1530,12 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         super.onStop()
         if (Connect.listener === this) Connect.listener = null
         guardar()
+        emSegundoPlano = true
+        posicaoEmSegundoPlano = player?.currentPosition ?: 0L
+        reproduziaAntes = player?.playWhenReady == true
         player?.playWhenReady = false
+        handler.removeCallbacks(prazo)
+        handler.postDelayed(liberarEmSegundoPlano, 45_000)
         // Relógio da barra, pulos e próximo episódio: nada disso aparece fora da tela.
         handler.removeCallbacks(tique)
     }

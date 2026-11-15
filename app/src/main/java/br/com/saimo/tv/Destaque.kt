@@ -28,9 +28,7 @@ import kotlinx.coroutines.launch
  *
  * Quando o catálogo publica um trailer direto (MP4 ou HLS, sexto campo de
  * destaques.txt), ele começa sem som depois de 5 s de foco parado, no lugar
- * da imagem. Se o trailer chegou a tocar e o foco continuou ali por mais
- * 15 s, a ficha abre sozinha. Sem trailer, nada abre sozinho: quem para no
- * cartão para ler a sinopse não é levado para outra tela.
+ * da imagem. A ficha só abre quando o usuário seleciona o cartão.
  */
 @UnstableApi
 class Destaque(
@@ -86,10 +84,6 @@ class Destaque(
             trailerJob = escopo.launch(semDerrubar) {
                 delay(5_000)
                 iniciarTrailer(trailer)
-                delay(15_000)
-                val naFrente = (tela as? LifecycleOwner)?.lifecycle?.currentState
-                    ?.isAtLeast(Lifecycle.State.RESUMED) ?: true
-                if (trailerMostrou && naFrente) aoAbrir(cartao)
             }
         }
         val alvo = cartao.alvo
