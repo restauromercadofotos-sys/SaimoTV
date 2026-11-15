@@ -587,11 +587,21 @@ private class EpisodiosAdapter(
         holder.visto.visibility = if (fracao != null && fracao >= 1f) View.VISIBLE else View.GONE
         holder.progresso.visibility = if (fracao != null && fracao < 1f) View.VISIBLE else View.GONE
         fracao?.let { holder.progresso.progress = (it * 1000).toInt() }
+        holder.imagem.dispose()
+        holder.imagem.setImageDrawable(null)
         if (dados?.imagem != null) {
+            holder.numero.visibility = View.INVISIBLE
             holder.imagem.visibility = View.VISIBLE
-            holder.imagem.load(dados.imagem) { crossfade(150) }
+            holder.imagem.load(dados.imagem) {
+                crossfade(150)
+                listener(onError = { _, _ ->
+                    holder.imagem.visibility = View.GONE
+                    holder.numero.visibility = View.VISIBLE
+                })
+            }
         } else {
-            holder.imagem.dispose(); holder.imagem.setImageDrawable(null)
+            holder.imagem.visibility = View.GONE
+            holder.numero.visibility = View.VISIBLE
         }
         holder.itemView.setOnClickListener { aoEscolher(ep) }
         holder.itemView.nextFocusUpId = acima
