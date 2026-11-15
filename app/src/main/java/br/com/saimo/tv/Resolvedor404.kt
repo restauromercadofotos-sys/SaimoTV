@@ -59,6 +59,7 @@ object Resolvedor404 {
 
     private val http: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .callTimeout(15, TimeUnit.SECONDS)
             .connectTimeout(6, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .followRedirects(true)
@@ -113,7 +114,7 @@ object Resolvedor404 {
             if (System.currentTimeMillis() - t < TTL_MS) return v
         }
         return withContext(Dispatchers.IO) {
-            val res = withTimeoutOrNull(12000L) {
+            val res = coroutineScope {
                 val imdbId = obterImdbId(tmdbId, serie)
                 val imdbMid = if (imdbId != null) {
                     if (serie) "$imdbId:$temporada:$numero" else imdbId
