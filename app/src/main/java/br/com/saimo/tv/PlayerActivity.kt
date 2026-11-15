@@ -397,12 +397,17 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         herdarFonte: Boolean = false,
         startTime: Long = 0L,
     ) {
-        if (versao !in fontes.keys) versao = if (Preferencias.versao in fontes) Preferencias.versao
-                                              else fontes.keys.firstOrNull() ?: "dub"
+        val lembrada = fonteLembrada(r)
+        if (lembrada != null) versao = lembrada.versao
+        else if (versao !in fontes.keys) versao = if (Preferencias.versao in fontes) Preferencias.versao
+                                                   else fontes.keys.firstOrNull() ?: "dub"
         opcoes = Titulos.ordem(fontes, versao)
+        if (lembrada != null) opcoes = (listOf(lembrada) + opcoes).distinctBy { it.url }
         tentadas.clear(); semVideo = false
-        fonte = if (herdarFonte && r.serie && preferidaPosicao >= 0)
-            Titulos.preferida(opcoes, preferidaServidor, preferidaPosicao) else 0
+        fonte = if (lembrada != null) 0
+                else if (herdarFonte && r.serie && preferidaPosicao >= 0)
+                    Titulos.preferida(opcoes, preferidaServidor, preferidaPosicao)
+                else 0
         marcas = null
         legendasExt = emptyList()
         legendaExt = null
@@ -426,6 +431,28 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         if (startTime <= 0 && retomar > 0) perguntarRetomada(retomar)
     }
 
+    private fun chaveFonteLembrada(r: Titulos.Resolvido) = "fonte:" + r.chave(ep)
+
+    private fun fonteLembrada(r: Titulos.Resolvido): Titulos.Opcao? {
+        val prefs = getSharedPreferences("fontes_vod", Context.MODE_PRIVATE)
+        val chave = chaveFonteLembrada(r)
+        val url = prefs.getString("$chave:url", null)?.takeIf { it.startsWith("http") } ?: return null
+        val versaoSalva = prefs.getString("$chave:versao", null).orEmpty().ifBlank { versao }
+        val origem = prefs.getString("$chave:origem", null)?.takeIf { it.isNotBlank() }
+        return Titulos.Opcao(versaoSalva, url, origem)
+    }
+
+    private fun guardarFonteQueFuncionou() {
+        val r = resolvido ?: return
+        val opcao = opcoes.getOrNull(fonte) ?: return
+        val chave = chaveFonteLembrada(r)
+        getSharedPreferences("fontes_vod", Context.MODE_PRIVATE).edit()
+            .putString("$chave:url", opcao.url)
+            .putString("$chave:versao", opcao.versao)
+            .putString("$chave:origem", opcao.origem.orEmpty())
+            .apply()
+    }
+
     /** Consulta addons enquanto o vídeo do catálogo já pode carregar. */
     private var consultaFontes = 0L
 
@@ -433,17 +460,48 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         val consulta = ++consultaFontes
         val episodio = ep
         if (r.tmdbId <= 0 || r.reservado) return
+
+        fun adicionar(extras: Map<String, List<String>>, priorizar: Boolean) {
+            if (consulta != consultaFontes || resolvido?.chave(ep) != r.chave(episodio)) return
+            val atualUrl = opcoes.getOrNull(fonte)?.url
+            val lembradaUrl = fonteLembrada(r)?.url
+            val atuais = opcoes.map { opcao ->
+                opcao.copy(origem = Resolvedor404.origem(opcao.url) ?: opcao.origem)
+            }
+            val conhecidas = atuais.map { it.url }.toMutableSet()
+            val novas = Titulos.ordem(extras, versao).filter { conhecidas.add(it.url) }
+            var combinadas = (if (priorizar) novas + atuais else atuais + novas).distinctBy { it.url }
+            if (lembradaUrl != null) {
+                combinadas.firstOrNull { it.url == lembradaUrl }?.let { preferida ->
+                    combinadas = listOf(preferida) + combinadas.filterNot { it.url == lembradaUrl }
+                }
+            }
+            if (combinadas == opcoes) return
+            val trocarParaFenix = priorizar && novas.isNotEmpty() && !tocou && atualUrl != lembradaUrl
+            opcoes = combinadas
+            fonte = if (trocarParaFenix) {
+                opcoes.indexOfFirst { it.origem == "FenixFlix" }.coerceAtLeast(0)
+            } else {
+                opcoes.indexOfFirst { it.url == atualUrl }.coerceAtLeast(0)
+            }
+            tentadas.clear()
+            if (!trocarParaFenix) tentadas += fonte
+            montarBotoes()
+            if (trocarParaFenix) tocarFonte(player?.currentPosition ?: 0L)
+        }
+
         lifecycleScope.launch(semDerrubar) {
-            val extras = Resolvedor404.fontes(
+            val fenix = Resolvedor404.fontesFenix(
                 r.tmdbId, r.serie, episodio?.temporada ?: 0, episodio?.numero ?: 0
             )
-            if (consulta != consultaFontes || resolvido?.chave(ep) != r.chave(episodio)) return@launch
-            val conhecidas = opcoes.map { it.url }.toMutableSet()
-            val novas = Titulos.ordem(extras, versao).filter { conhecidas.add(it.url) }
-            if (novas.isEmpty()) return@launch
-            opcoes = opcoes + novas
-            // Mantém a fonte atual e sua posição. O botão lê a lista atualizada.
-            montarBotoes()
+            adicionar(fenix, priorizar = true)
+        }
+        lifecycleScope.launch(semDerrubar) {
+            val outras = Resolvedor404.fontes(
+                r.tmdbId, r.serie, episodio?.temporada ?: 0, episodio?.numero ?: 0,
+                incluirFenix = false
+            )
+            adicionar(outras, priorizar = false)
         }
     }
 
@@ -787,6 +845,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                     }
                     if (travadas >= 2 && !reduziu && !Preferencias.economia) reduzirQualidade()
                     if (!tocou) {
+                        guardarFonteQueFuncionou()
                         tocou = true
                         Telemetria.tocou("vod", nomeTelemetria(), opcoes.getOrNull(fonte)?.url.orEmpty(),
                             fonte + 1, SystemClock.elapsedRealtime() - tentativaDesde)
