@@ -9,6 +9,7 @@ package br.com.saimo.tv
 // cadeia RedeFlix (uso unico) entra no FIM da fila e NUNCA
 // vai ao cache.
 // ============================================================
+import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
