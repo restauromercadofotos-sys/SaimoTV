@@ -625,7 +625,8 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         selecionarLegendaExt = legendaExt != null
         urlTocando = null
         handler.removeCallbacks(prazo)
-        handler.postDelayed(prazo, PRAZO_MS)
+        handler.postDelayed(prazo, 45_000L)
+        atual.stop()
         resolucao.visibility = View.GONE
         if (!Playback.ehEnderecoDinamico(opcao.url)) {
             iniciarFonte(atual, opcao.url, inicio, pausado)
@@ -648,6 +649,9 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     }
 
     private fun iniciarFonte(atual: ExoPlayer, url: String, inicio: Long, pausado: Boolean) {
+        handler.removeCallbacks(prazo)
+        handler.postDelayed(prazo, PRAZO_MS)
+        ignorarFalhaAte = SystemClock.elapsedRealtime() + IGNORAR_EVENTO_ANTERIOR_MS
         urlTocando = url
         atual.setMediaSource(fonteAtual(url))
         if (inicio > 0) atual.seekTo(inicio)
@@ -742,7 +746,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             val p = player ?: return
             // O mesmo listener é reutilizado. Ao trocar de mídia, o ExoPlayer
             // ainda pode entregar o último estado da fonte anterior.
-            if (state != p.playbackState) return
+            if (urlTocando == null || state != p.playbackState) return
             when (state) {
                 Player.STATE_READY -> {
                     handler.removeCallbacks(prazo)
@@ -812,7 +816,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             // setMediaSource pode ser seguido pelo erro enfileirado da mídia
             // anterior. Ignora-o; se a fonte nova também falhar, o prazo normal
             // continua ativo e fará a troca depois de uma tentativa real.
-            if (!tocou && SystemClock.elapsedRealtime() < ignorarFalhaAte) return
+            if (urlTocando == null || (!tocou && SystemClock.elapsedRealtime() < ignorarFalhaAte)) return
             handler.removeCallbacks(prazo)
             // Legenda com defeito não é fonte morta: sai a legenda, o filme
             // continua no mesmo servidor e no mesmo ponto.
