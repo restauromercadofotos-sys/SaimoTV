@@ -100,6 +100,9 @@ class FichaActivity : TelaComMenu() {
         super.onCreate(savedInstanceState)
         alvo = Alvo.de(intent) ?: run { finish(); return }
         setContentView(R.layout.activity_ficha)
+        // A ficha é uma experiência de conteúdo em tela cheia. VOLTAR retorna
+        // ao catálogo; manter a navegação fixa aqui espremia e cortava o herói.
+        barraMenu?.visibility = View.GONE
 
         val assistir = findViewById<TextView>(R.id.fichaAssistir)
         assistirBotao = assistir
@@ -107,7 +110,16 @@ class FichaActivity : TelaComMenu() {
         // O topo ocupa a primeira tela inteira; episódios, elenco e parecidos
         // aparecem rolando para baixo com o direcional.
         findViewById<View>(R.id.fichaTopo).minimumHeight =
-            (resources.displayMetrics.heightPixels * 0.66f).toInt()
+            (resources.displayMetrics.heightPixels * if (alvo.serie) 0.58f else 0.66f).toInt()
+        if (alvo.serie) {
+            findViewById<View>(R.id.fichaCapaGrupo).visibility = View.GONE
+            findViewById<LinearLayout>(R.id.fichaInfo).apply {
+                val parametros = layoutParams as LinearLayout.LayoutParams
+                parametros.marginStart = 0
+                layoutParams = parametros
+            }
+            findViewById<TextView>(R.id.fichaTitulo).textSize = 42f
+        }
         findViewById<View>(R.id.fichaVersao).setOnFocusChangeListener(crescerNoFoco)
         findViewById<RecyclerView>(R.id.fichaEpisodios).apply {
             layoutManager = LinearLayoutManager(this@FichaActivity, RecyclerView.HORIZONTAL, false)

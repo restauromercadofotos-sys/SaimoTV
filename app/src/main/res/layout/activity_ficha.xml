@@ -58,6 +58,7 @@
             android:orientation="horizontal">
 
             <FrameLayout
+                android:id="@+id/fichaCapaGrupo"
                 android:layout_width="152dp"
                 android:layout_height="228dp"
                 android:background="@drawable/bg_logo">
@@ -80,6 +81,7 @@
             </FrameLayout>
 
             <LinearLayout
+                android:id="@+id/fichaInfo"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="34dp"

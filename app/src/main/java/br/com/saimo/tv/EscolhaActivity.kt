@@ -41,7 +41,7 @@ import java.util.Locale
 class EscolhaActivity : TelaComMenu(), Connect.Listener {
 
     override val aba = Aba.INICIO
-    override fun aoFocarMenu() = cabecalhoPadrao()
+    override fun aoFocarMenu() { if (!temDestaque) cabecalhoPadrao() }
     override val aoMenuInicio: (() -> Unit) = { focarPrimeiro() }
 
 
@@ -56,6 +56,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
     private val handler = Handler(Looper.getMainLooper())
     private val hora = SimpleDateFormat("HH:mm", Locale("pt", "BR"))
     private var ultimoVoltar = 0L
+    private var temDestaque = false
 
     private val adaptador by lazy {
         Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) },
@@ -435,7 +436,10 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
 
     private val painelDestaque by lazy { Destaque(this, lifecycleScope, fundo, titulo, meta, sinopse) { it.aoEscolher() } }
 
-    private fun mostrarDestaque(cartao: Inicio.Cartao) = painelDestaque.mostrar(cartao)
+    private fun mostrarDestaque(cartao: Inicio.Cartao) {
+        temDestaque = true
+        painelDestaque.mostrar(cartao)
+    }
 
     // MARK: - Teclas
 

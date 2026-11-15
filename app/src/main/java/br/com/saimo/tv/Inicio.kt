@@ -26,6 +26,9 @@ import kotlinx.coroutines.launch
  */
 object Inicio {
 
+    internal fun indiceNaFilaVertical(indiceAtual: Int, totalDestino: Int): Int =
+        if (totalDestino <= 0) -1 else if (indiceAtual in 0 until totalDestino) indiceAtual else 0
+
     /// A fileira do último cartão focado: rolar a tela só quando ela muda.
     private var ultimaFileira = java.lang.ref.WeakReference<View>(null)
 
@@ -242,12 +245,46 @@ object Inicio {
             holder.itemView.setOnKeyListener { _, codigo, evento ->
                 if (Cartoes.segurarNasPontas(holder, codigo, evento)) return@setOnKeyListener true
                 if (evento.action == KeyEvent.ACTION_DOWN &&
+                    (codigo == KeyEvent.KEYCODE_DPAD_UP || codigo == KeyEvent.KEYCODE_DPAD_DOWN) &&
+                    moverVertical(holder, if (codigo == KeyEvent.KEYCODE_DPAD_UP) -1 else 1)) {
+                    return@setOnKeyListener true
+                }
+                if (evento.action == KeyEvent.ACTION_DOWN &&
                     (codigo == KeyEvent.KEYCODE_MENU || codigo == KeyEvent.KEYCODE_BOOKMARK)) {
                     holder.cartao?.aoMenu?.let { it(); true } ?: false
                 } else false
             }
             holder.itemView.setOnLongClickListener { holder.cartao?.aoMenu?.let { it(); true } ?: false }
             return holder
+        }
+
+        /** Mantém a coluna ao trocar de fileira; o foco espacial escolhia a última capa. */
+        private fun moverVertical(holder: Holder, passo: Int): Boolean {
+            val horizontal = holder.itemView.parent as? RecyclerView ?: return false
+            val fileira = horizontal.parent as? View ?: return false
+            val vertical = fileira.parent as? RecyclerView ?: return false
+            val atual = vertical.getChildAdapterPosition(fileira)
+            val destino = atual + passo
+            val total = vertical.adapter?.itemCount ?: return false
+            if (atual == RecyclerView.NO_POSITION || destino !in 0 until total) return false
+            focarNaFileira(vertical, destino, holder.bindingAdapterPosition)
+            return true
+        }
+
+        private fun focarNaFileira(vertical: RecyclerView, fila: Int, colunaAtual: Int, tentativas: Int = 8) {
+            val linha = vertical.findViewHolderForAdapterPosition(fila)?.itemView
+            val horizontal = linha?.findViewById<RecyclerView>(R.id.filaCapas)
+            if (horizontal == null) {
+                vertical.scrollToPosition(fila)
+                if (tentativas > 0) vertical.post { focarNaFileira(vertical, fila, colunaAtual, tentativas - 1) }
+                return
+            }
+            val coluna = indiceNaFilaVertical(colunaAtual, horizontal.adapter?.itemCount ?: 0)
+            if (coluna < 0) return
+            val alvo = horizontal.findViewHolderForAdapterPosition(coluna)?.itemView
+            if (alvo?.requestFocus() == true) return
+            horizontal.scrollToPosition(coluna)
+            if (tentativas > 0) horizontal.post { focarNaFileira(vertical, fila, colunaAtual, tentativas - 1) }
         }
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
