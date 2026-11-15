@@ -311,7 +311,7 @@ object Inicio {
             holder.arteJob?.cancel()
             holder.logo?.dispose()
             holder.logo?.setImageDrawable(null)
-            holder.logo?.visibility = View.GONE
+            holder.logo?.visibility = View.INVISIBLE
             holder.nome.visibility = View.VISIBLE
             holder.itemView.contentDescription = cartao.titulo
             holder.itemView.animate().cancel()
