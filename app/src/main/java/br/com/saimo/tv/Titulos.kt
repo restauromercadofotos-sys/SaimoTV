@@ -120,15 +120,9 @@ object Titulos {
         } else {
             val filme = juntarGrafias(context, achado)
             if (filme != null) {
-                // 404: acrescenta fontes dos addons como reserva no fim da fila
-                val extras = if (tmdb > 0) Resolvedor404.fontes(tmdb, serie = false) else emptyMap()
-                val comExtras = if (extras.isNotEmpty()) {
-                    val todas = filme.fontes.keys + extras.keys
-                    todas.associateWith { v ->
-                        (filme.fontes[v].orEmpty() + extras[v].orEmpty()).distinct()
-                    }
-                } else filme.fontes
-                return Resolvido(alvo, filme.titulo, Filme(filme.titulo, comExtras), emptyList(), tmdb)
+                // O catálogo já tem links: abre imediatamente. Os addons são
+                // consultados pelo player apenas se as fontes locais falharem.
+                return Resolvido(alvo, filme.titulo, filme, emptyList(), tmdb)
             }
             // 404: filme novo / lancamento que NAO esta no catalogo local de filmes!
             if (tmdb > 0) {
