@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- O LumeFlix só registra catálogo e reprodução sob demanda. As telas
+         abaixo pertencem exclusivamente ao aplicativo TV Ao Vivo. -->
+    <application>
+        <activity android:name=".MainActivity" tools:node="remove" />
+        <activity android:name=".GuideActivity" tools:node="remove" />
+        <activity android:name=".EventosActivity" tools:node="remove" />
+        <activity android:name=".RadiosActivity" tools:node="remove" />
+        <activity android:name=".SemListaActivity" tools:node="remove" />
+        <activity android:name=".DoacaoActivity" tools:node="remove" />
+    </application>
+</manifest>

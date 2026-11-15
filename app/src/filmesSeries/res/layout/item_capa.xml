@@ -28,7 +28,8 @@
             android:fontFamily="sans-serif-medium"
             android:gravity="center"
             android:textColor="@color/accent"
-            android:textSize="30sp" />
+            android:textSize="30sp"
+            android:visibility="invisible" />
 
         <ImageView
             android:id="@+id/capaImagem"
