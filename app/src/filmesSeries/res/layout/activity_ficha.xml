@@ -8,7 +8,7 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#101010"
+    android:background="@drawable/fundo_lumeflix"
     android:clipChildren="false">
 
     <ScrollView
@@ -54,6 +54,7 @@
         android:layout_height="180dp"
         android:layout_gravity="bottom"
         android:background="@drawable/bg_ficha_baixo" />
+        <View android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/banner_bordas" />
 
     </FrameLayout>
 
@@ -116,7 +117,8 @@
                     android:fontFamily="sans-serif-medium"
                     android:maxLines="1"
                     android:textColor="@color/text_primary"
-                    android:textSize="30sp" />
+                    android:textSize="28sp"
+                    android:letterSpacing="0" />
 
                 <TextView
                     android:id="@+id/fichaFrase"

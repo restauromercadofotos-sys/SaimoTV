@@ -486,7 +486,7 @@ class FichaActivity : TelaComMenu() {
 
         /// O crescimento no foco é a GPU, não uma nova medição de layout.
         internal val crescerNoFoco = View.OnFocusChangeListener { view, foco ->
-            val escala = if (foco) 1.06f else 1f
+            val escala = if (foco && (BuildConfig.TV_AO_VIVO || view !is TextView)) 1.06f else 1f
             view.animate().scaleX(escala).scaleY(escala).setDuration(120).start()
         }
     }

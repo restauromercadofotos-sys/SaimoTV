@@ -185,8 +185,8 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         cartaoDestaque = null
         assistir?.visibility = View.GONE
         informacoes?.visibility = View.GONE
-        painelDestaque.padrao(saudacao(), getString(R.string.escolha_titulo))
-        sinopse.text = getString(if (Vr.ativo) R.string.vr_inicio_dica else R.string.inicio_dica)
+        painelDestaque.padrao(if (BuildConfig.TV_AO_VIVO) saudacao() else "Seu próximo favorito", getString(R.string.escolha_titulo))
+        sinopse.text = if (BuildConfig.TV_AO_VIVO) getString(if (Vr.ativo) R.string.vr_inicio_dica else R.string.inicio_dica) else "Explore filmes e séries nas fileiras abaixo."
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -371,6 +371,9 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         // primeira capa; depois disso, fica onde a pessoa deixou.
         val devolver = primeiraVez || (filas.hasFocus() && System.currentTimeMillis() - abertaEm < 8_000)
         adaptador.trocar(lista)
+        if (!BuildConfig.TV_AO_VIVO && cartaoDestaque == null) {
+            lista.asSequence().flatMap { it.cartoes.asSequence() }.firstOrNull { it.alvo != null }?.let { mostrarDestaque(it) }
+        }
         if (devolver) {
             primeiraVez = false
             filas.post { focarPrimeiro() }
