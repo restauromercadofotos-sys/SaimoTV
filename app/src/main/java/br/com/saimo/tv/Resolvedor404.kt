@@ -150,6 +150,7 @@ object Resolvedor404 {
                     mapa.forEach { (v, urls) -> comCadeia[v] = urls.toMutableList() }
                     for ((versao, url) in cadeia) {
                         cadeiaUrls.add(url)
+                        origens.putIfAbsent(url, "RedeFlix")
                         val list = comCadeia.getOrPut(versao) { mutableListOf() }
                         if (url !in list) list.add(url)
                     }
