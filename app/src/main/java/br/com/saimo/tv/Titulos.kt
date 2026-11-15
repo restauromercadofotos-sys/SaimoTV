@@ -14,8 +14,12 @@ import androidx.media3.common.util.UnstableApi
 @UnstableApi
 object Titulos {
 
-    /** Uma fonte tocável, com a versão (dublado/legendado) a que pertence. */
-    data class Opcao(val versao: String, val url: String)
+    /** Uma fonte tocável, com versão e provedor quando veio de um addon. */
+    data class Opcao(
+        val versao: String,
+        val url: String,
+        val origem: String? = Resolvedor404.origem(url),
+    )
 
     /** Um episódio com todas as versões e fontes juntas. */
     data class Ep(val temporada: Int, val numero: Int, val fontes: Map<String, List<String>>) {
@@ -190,6 +194,21 @@ object Titulos {
     /** Servidor (host sem "www.") de uma url de fonte, ou vazio. */
     fun servidor(url: String): String =
         runCatching { java.net.URI(url).host }.getOrNull()?.removePrefix("www.")?.lowercase().orEmpty()
+
+    /**
+     * Nome legível da fonte. Addons preservam o nome informado pelo resolvedor;
+     * fontes antigas usam o primeiro trecho do host. IPs ficam sem nome para a
+     * interface manter apenas a sequência "Fonte N".
+     */
+    fun identificadorFonte(opcao: Opcao): String? {
+        opcao.origem?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        val host = servidor(opcao.url)
+        if (host.isBlank() || ':' in host ||
+            host.matches(Regex("""\d{1,3}(\.\d{1,3}){3}"""))) return null
+        return host.substringBefore('.').takeIf { nome ->
+            nome.isNotBlank() && nome.any { it.isLetter() }
+        }?.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+    }
 
     /**
      * Fonte do episódio novo que mais se parece com a que tocava: a primeira do
