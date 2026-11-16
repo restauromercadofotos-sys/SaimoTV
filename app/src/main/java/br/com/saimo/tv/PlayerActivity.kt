@@ -1256,7 +1256,12 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         val r = resolvido ?: return
         if (!tocou) return
         if (r.reservado) return
-        Progresso.salvar(this, r.chave(ep), p.currentPosition, p.duration)
+        val creditos = marcas?.creditos?.takeIf { it > p.duration / 2 && it < p.duration }
+        val concluido = creditos != null && p.currentPosition >= creditos
+        Progresso.salvar(this, r.chave(ep), if (concluido) p.duration else p.currentPosition, p.duration)
+        if (concluido && r.serie && ep?.let { r.seguinte(it) } == null) {
+            Progresso.finalizarSerie(this, r.nomeChave)
+        }
         ProximaNaTv.atualizar(this, r, ep, p.currentPosition, p.duration)
     }
 
