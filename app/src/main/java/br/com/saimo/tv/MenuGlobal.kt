@@ -100,7 +100,24 @@ object MenuGlobal {
                     aba == Aba.AJUSTES -> Icones.so(this, icone)
                     icone != 0 -> Icones.inicio(this, icone)
                 }
-                setOnFocusChangeListener { _, foco -> if (foco) aoFocar?.invoke() }
+                // Na faixa superior, mover para a aba já a abre. O atraso
+                // curto evita disparo acidental quando o usuário segura a seta,
+                // mas elimina o segundo clique exigido anteriormente.
+                var abrirAoFocar: Runnable? = null
+                setOnFocusChangeListener { v, foco ->
+                    abrirAoFocar?.let(v::removeCallbacks)
+                    abrirAoFocar = null
+                    if (foco) {
+                        aoFocar?.invoke()
+                        if (aba != atual) {
+                            abrirAoFocar = Runnable {
+                                if (!v.hasFocus() || tela.isFinishing) return@Runnable
+                                if (aba == Aba.INICIO && aoInicio != null) aoInicio()
+                                else ir(tela, aba, atual)
+                            }.also { v.postDelayed(it, 180) }
+                        }
+                    }
+                }
                 // Para os lados, o menu anda de aba em aba e para nas pontas:
                 // no fim, a busca do sistema achava algo "à direita" lá embaixo.
                 setOnKeyListener { v, codigo, evento ->
@@ -115,7 +132,9 @@ object MenuGlobal {
                     abas.getChildAt(i)?.requestFocus()
                     true
                 }
-                setOnClickListener {
+                setOnClickListener { v ->
+                    abrirAoFocar?.let(v::removeCallbacks)
+                    abrirAoFocar = null
                     if (aba == Aba.INICIO && aoInicio != null) aoInicio() else ir(tela, aba, atual)
                 }
             })
