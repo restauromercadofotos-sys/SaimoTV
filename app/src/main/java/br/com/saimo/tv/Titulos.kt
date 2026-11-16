@@ -19,6 +19,7 @@ object Titulos {
         val versao: String,
         val url: String,
         val origem: String? = Resolvedor404.origem(url),
+        val qualidade: String? = Resolvedor404.qualidade(url),
     )
 
     /** Um episódio com todas as versões e fontes juntas. */
