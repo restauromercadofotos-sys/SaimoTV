@@ -156,6 +156,36 @@ class AjustesActivity : TelaComMenu() {
         },
 
         Secao(getString(R.string.ajustes_geral)),
+        Opcao("BestCine", { if (Resolvedor404.bestcineConfigurado()) "Configurado" else "Adicionar acesso" }) {
+            val campo = android.widget.EditText(this).apply {
+                hint = "Cole o link do manifest"
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                isSingleLine = true
+            }
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Acesso BestCine")
+                .setMessage("Cole seu endereço completo terminado em manifest.json. Ele será salvo neste aparelho.")
+                .setView(campo)
+                .setPositiveButton("Salvar") { _, _ ->
+                    try {
+                        if (campo.text.isNotBlank()) Resolvedor404.configurarBestcine(this, campo.text.toString())
+                        redesenhar()
+                    } catch (_: Exception) {
+                        Toast.makeText(this, "Link BestCine inválido", Toast.LENGTH_LONG).show()
+                    }
+                }
+                .setNeutralButton("Remover") { _, _ ->
+                    Resolvedor404.configurarBestcine(this, "")
+                    redesenhar()
+                }
+                .setNegativeButton("Cancelar", null).show()
+        },
+        Opcao("Testar BestCine", { "Verificar acesso neste aparelho" }) {
+            lifecycleScope.launch {
+                val resultado = Resolvedor404.testarBestcine()
+                Toast.makeText(this@AjustesActivity, resultado, Toast.LENGTH_LONG).show()
+            }
+        },
         Opcao(getString(R.string.ajustes_listas), { Listas.resumo(this) }) {
             ListasDialogo.mostrar(this) { redesenhar() }
         },
