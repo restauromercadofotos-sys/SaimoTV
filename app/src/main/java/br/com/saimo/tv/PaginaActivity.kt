@@ -28,7 +28,7 @@ import java.util.Locale
 @UnstableApi
 open class PaginaActivity : TelaComMenu() {
 
-    override val aba: Aba get() = Aba.ON_DEMAND
+    override val aba: Aba get() = if (tipoDaPagina() == GradeActivity.FILMES) Aba.ON_DEMAND else Aba.SERIES
 
     companion object {
         private const val TIPO = "pagina.tipo"
@@ -165,6 +165,21 @@ open class PaginaActivity : TelaComMenu() {
         // Lançamentos e gêneros saem do acervo inteiro, fora da linha principal.
         val candidatos = withContext(Dispatchers.Default) {
             if (colecao) daColecao(tipo) else doAcervo(serie)
+        }
+        val categorias = Generos.todos.sorted().filter { genero ->
+            val bit = Generos.bit(genero)
+            candidatos.any { it.generos and bit != 0 }
+        }
+        if (categorias.isNotEmpty()) {
+            lista.add(0, Inicio.Fila("Categorias", listOf(
+                Inicio.Cartao("Todas as categorias", "", "≡") {
+                    Painel.mostrar(this, "Categorias", listOf(
+                        Painel.Item("Todos") { GradeActivity.abrir(this, tipo) }
+                    ) + categorias.map { genero ->
+                        Painel.Item(genero) { GradeActivity.abrir(this, tipo, genero) }
+                    })
+                }
+            )))
         }
         lancamentos(candidatos)?.let { lista += Inicio.Fila(getString(R.string.pagina_lancamentos), it) }
 
