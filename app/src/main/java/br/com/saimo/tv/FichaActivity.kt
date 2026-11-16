@@ -361,6 +361,28 @@ class FichaActivity : TelaComMenu() {
     }
 
     private fun mostrar(ficha: Detalhes.Ficha) {
+        val nome = findViewById<TextView>(R.id.fichaTitulo)
+        nome.text = ficha.titulo.ifBlank { Generos.semAno(alvo.titulo) }
+        ficha.logo?.let { url ->
+            val grupo = nome.parent as? LinearLayout
+            if (grupo != null) {
+                val logo = ImageView(this).apply {
+                    visibility = View.GONE
+                    contentDescription = nome.text
+                    adjustViewBounds = true
+                    scaleType = ImageView.ScaleType.FIT_START
+                    val d = resources.displayMetrics.density
+                    layoutParams = LinearLayout.LayoutParams((280*d).toInt(), (80*d).toInt())
+                }
+                grupo.addView(logo, grupo.indexOfChild(nome))
+                logo.load(url) {
+                    listener(onSuccess = { _, _ ->
+                        logo.visibility = View.VISIBLE
+                        nome.visibility = View.GONE
+                    })
+                }
+            }
+        }
         ficha.fundo?.let { endereco ->
             findViewById<ImageView>(R.id.fichaFundo).load(endereco) {
                 crossfade(400)
