@@ -46,13 +46,15 @@ object MenuGlobal {
         barra.addView(if (BuildConfig.TV_AO_VIVO) ImageView(tela).apply {
             setImageResource(R.mipmap.ic_launcher)
             layoutParams = LinearLayout.LayoutParams((28 * d).toInt(), (28 * d).toInt()).apply { marginEnd = (8 * d).toInt() }
-        } else TextView(tela).apply {
-            text = tela.getString(R.string.app_name)
-            textSize = 21f
-            typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
-            setTextColor(ContextCompat.getColor(tela, R.color.accent))
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = (22 * d).toInt() }
+        } else ImageView(tela).apply {
+            // Logo vetorial por extenso: não precisa carregar imagem da rede,
+            // decodificar bitmap grande ou carregar uma fonte adicional.
+            setImageResource(R.drawable.lumeflix_wordmark)
+            contentDescription = tela.getString(R.string.app_name)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
+            layoutParams = LinearLayout.LayoutParams((156 * d).toInt(),
+                (30 * d).toInt()).apply { marginEnd = (22 * d).toInt() }
         })
         val rolagem = HorizontalScrollView(tela).apply {
             isHorizontalScrollBarEnabled = false
