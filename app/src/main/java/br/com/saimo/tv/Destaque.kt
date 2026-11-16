@@ -120,15 +120,29 @@ class Destaque(
         }
         trabalho = escopo.launch(semDerrubar) {
             delay(400)
-            val ficha = Detalhes.de(alvo.titulo, alvo.serie, alvo.tmdbId.takeIf { it > 0 }) ?: return@launch
+            val ficha = Detalhes.de(alvo.titulo, alvo.serie, alvo.tmdbId.takeIf { it > 0 })
+            if (ficha == null) {
+                titulo.visibility = View.VISIBLE
+                return@launch
+            }
             titulo.text = ficha.titulo.ifBlank { Generos.semAno(alvo.titulo) }
-            ficha.logo?.let { url ->
+            val urlLogo = ficha.logo
+            if (urlLogo.isNullOrBlank()) {
+                titulo.visibility = View.VISIBLE
+            } else {
                 logoTitulo.contentDescription = titulo.text
-                logoTitulo.load(url) {
-                    listener(onSuccess = { _, _ ->
-                        logoTitulo.visibility = View.VISIBLE
-                        titulo.visibility = View.GONE
-                    })
+                logoTitulo.visibility = View.INVISIBLE
+                logoTitulo.load(urlLogo) {
+                    listener(
+                        onSuccess = { _, _ ->
+                            logoTitulo.visibility = View.VISIBLE
+                            titulo.visibility = View.GONE
+                        },
+                        onError = { _, _ ->
+                            logoTitulo.visibility = View.GONE
+                            titulo.visibility = View.VISIBLE
+                        },
+                    )
                 }
             }
             val linha = listOfNotNull(
