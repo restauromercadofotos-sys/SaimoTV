@@ -401,7 +401,8 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         if (lembrada != null) versao = lembrada.versao
         else if (versao !in fontes.keys) versao = if (Preferencias.versao in fontes) Preferencias.versao
                                                    else fontes.keys.firstOrNull() ?: "dub"
-        opcoes = Titulos.ordem(fontes, versao)
+        opcoes = ordenarPorDesempenho(Titulos.ordem(fontes, versao))
+        // A fonte que já funcionou neste título continua acima do ranking geral.
         if (lembrada != null) opcoes = (listOf(lembrada) + opcoes).distinctBy { it.url }
         tentadas.clear(); semVideo = false
         fonte = if (lembrada != null) 0
@@ -439,7 +440,8 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         val url = prefs.getString("$chave:url", null)?.takeIf { it.startsWith("http") } ?: return null
         val versaoSalva = prefs.getString("$chave:versao", null).orEmpty().ifBlank { versao }
         val origem = prefs.getString("$chave:origem", null)?.takeIf { it.isNotBlank() }
-        return Titulos.Opcao(versaoSalva, url, origem)
+        val qualidade = prefs.getString("$chave:qualidade", null)?.takeIf { it.isNotBlank() }
+        return Titulos.Opcao(versaoSalva, url, origem, qualidade)
     }
 
     private fun guardarFonteQueFuncionou() {
@@ -450,7 +452,46 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             .putString("$chave:url", opcao.url)
             .putString("$chave:versao", opcao.versao)
             .putString("$chave:origem", opcao.origem.orEmpty())
+            .putString("$chave:qualidade", opcao.qualidade.orEmpty())
             .apply()
+    }
+
+    /**
+     * Aprende no próprio aparelho quais combinações de provedor/servidor e
+     * qualidade abrem melhor. O histórico não sai do app e só muda a ordem:
+     * as três primeiras são as candidatas rápidas; as demais continuam como
+     * reserva quando nenhuma delas funciona.
+     */
+    private fun chaveDesempenho(opcao: Titulos.Opcao): String {
+        val servidor = opcao.origem?.takeIf { it.isNotBlank() }
+            ?: Titulos.servidor(opcao.url).ifBlank { "desconhecida" }
+        return (servidor.lowercase() + "|" + opcao.qualidade.orEmpty().lowercase())
+            .replace(Regex("""[^a-z0-9.|_-]"""), "_")
+    }
+
+    private fun pontuacao(opcao: Titulos.Opcao): Int {
+        val aprendida = getSharedPreferences("fontes_desempenho", Context.MODE_PRIVATE)
+            .getInt(chaveDesempenho(opcao), 0)
+        val preferenciaAddon = when (opcao.origem) {
+            "FenixFlix" -> 4
+            "BestCine" -> 2
+            else -> 0
+        }
+        return aprendida + preferenciaAddon
+    }
+
+    private fun ordenarPorDesempenho(lista: List<Titulos.Opcao>): List<Titulos.Opcao> =
+        lista.withIndex()
+            .sortedWith(compareByDescending<IndexedValue<Titulos.Opcao>> { pontuacao(it.value) }
+                .thenBy { it.index })
+            .map { it.value }
+
+    private fun ajustarDesempenho(opcao: Titulos.Opcao?, delta: Int) {
+        if (opcao == null) return
+        val prefs = getSharedPreferences("fontes_desempenho", Context.MODE_PRIVATE)
+        val chave = chaveDesempenho(opcao)
+        val atual = prefs.getInt(chave, 0)
+        prefs.edit().putInt(chave, (atual + delta).coerceIn(-20, 20)).apply()
     }
 
     /** Consulta addons enquanto o vídeo do catálogo já pode carregar. */
@@ -466,11 +507,16 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             val atualUrl = opcoes.getOrNull(fonte)?.url
             val lembradaUrl = fonteLembrada(r)?.url
             val atuais = opcoes.map { opcao ->
-                opcao.copy(origem = Resolvedor404.origem(opcao.url) ?: opcao.origem)
+                opcao.copy(
+                    origem = Resolvedor404.origem(opcao.url) ?: opcao.origem,
+                    qualidade = Resolvedor404.qualidade(opcao.url) ?: opcao.qualidade
+                )
             }
             val conhecidas = atuais.map { it.url }.toMutableSet()
             val novas = Titulos.ordem(extras, versao).filter { conhecidas.add(it.url) }
-            var combinadas = (if (priorizar) novas + atuais else atuais + novas).distinctBy { it.url }
+            var combinadas = ordenarPorDesempenho(
+                (if (priorizar) novas + atuais else atuais + novas).distinctBy { it.url }
+            )
             if (lembradaUrl != null) {
                 combinadas.firstOrNull { it.url == lembradaUrl }?.let { preferida ->
                     combinadas = listOf(preferida) + combinadas.filterNot { it.url == lembradaUrl }
@@ -755,6 +801,8 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
 
     private fun proximaFonte(posicao: Long) {
         player?.duration?.takeIf { it > 0 }?.let { duracaoAnterior = it }
+        // Chegar aqui significa que a fonte atual falhou, expirou ou terminou vazia.
+        ajustarDesempenho(opcoes.getOrNull(fonte), -2)
         tentadas += fonte
         val proxima = opcoes.indices.firstOrNull { it !in tentadas }
         if (proxima != null) {
@@ -846,6 +894,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                     if (travadas >= 2 && !reduziu && !Preferencias.economia) reduzirQualidade()
                     if (!tocou) {
                         guardarFonteQueFuncionou()
+                        ajustarDesempenho(opcoes.getOrNull(fonte), 3)
                         tocou = true
                         Telemetria.tocou("vod", nomeTelemetria(), opcoes.getOrNull(fonte)?.url.orEmpty(),
                             fonte + 1, SystemClock.elapsedRealtime() - tentativaDesde)
@@ -1465,8 +1514,14 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
      */
     private fun rotuloFonte(indice: Int): String {
         val sequencia = getString(R.string.player_fonte_n, indice + 1)
-        val nome = opcoes.getOrNull(indice)?.let(Titulos::identificadorFonte)
-        return if (nome.isNullOrBlank()) sequencia else "$sequencia • $nome"
+        val opcao = opcoes.getOrNull(indice)
+        val nome = opcao?.let(Titulos::identificadorFonte)
+        val qualidade = opcao?.qualidade
+        return listOfNotNull(
+            sequencia,
+            nome?.takeIf { it.isNotBlank() },
+            qualidade?.takeIf { it.isNotBlank() }
+        ).joinToString(" • ")
     }
 
     private fun painelFonte() {
