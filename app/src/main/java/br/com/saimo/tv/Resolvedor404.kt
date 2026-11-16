@@ -80,8 +80,7 @@ object Resolvedor404 {
         }
     }
 
-    private val bases: List<Pair<String, String>> get() { return
-        B64.entries.mapNotNull {
+    private val bases: List<Pair<String, String>> get() { return B64.entries.mapNotNull {
             val url = decodificar(it.value)
             if (url.startsWith("http")) {
                 val configurada = if (it.key == "FenixFlix")
