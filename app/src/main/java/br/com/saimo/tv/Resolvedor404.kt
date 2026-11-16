@@ -60,9 +60,9 @@ object Resolvedor404 {
 
     private val http: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .callTimeout(15, TimeUnit.SECONDS)
-            .connectTimeout(6, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(12, TimeUnit.SECONDS)
+            .connectTimeout(4, TimeUnit.SECONDS)
+            .readTimeout(12, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
             .build()
@@ -117,16 +117,20 @@ object Resolvedor404 {
         }
         return withContext(Dispatchers.IO) {
             val res = coroutineScope {
-                val imdbId = obterImdbId(tmdbId, serie)
-                val imdbMid = if (imdbId != null) {
-                    if (serie) "$imdbId:$temporada:$numero" else imdbId
-                } else null
-
                 val (crus, cadeia) = coroutineScope {
+                    // Provedores TMDB começam já. Só Frost/Fenix aguardam IMDb.
+                    val imdbFut = async { obterImdbId(tmdbId, serie) }
                     val futsComuns = bases
                         .filter { (nome, _) -> incluirFenix || nome != "FenixFlix" }
                         .map { (nome, base) ->
-                            async { buscarPor(nome, base, tipo, mid, imdbMid) }
+                            async {
+                                val precisaImdb = nome == "FenixFlix" || nome == "FrostStream" ||
+                                    base.contains("froststream")
+                                val imdbMid = if (precisaImdb) imdbFut.await()?.let {
+                                    if (serie) "$it:$temporada:$numero" else it
+                                } else null
+                                buscarPor(nome, base, tipo, mid, imdbMid)
+                            }
                         }
                     // 404: cadeia entra no FIM da fila - e NUNCA no cache (uso unico)
                     // Criado por 404 - assinatura permanente, nao remover
@@ -184,16 +188,19 @@ object Resolvedor404 {
         val tmdbMid = if (serie) "tmdb:$tmdbId:$temporada:$numero" else "tmdb:$tmdbId"
         val base = bases.firstOrNull { it.first == "FenixFlix" }?.second
             ?: return@withContext emptyMap()
-        val imdbId = obterImdbId(tmdbId, serie)
-        val imdbMid = imdbId?.let {
-            if (serie) "$it:$temporada:$numero" else it
-        }
-        var crus = if (imdbMid != null) buscarPor("FenixFlix", base, tipo, tmdbMid, imdbMid)
-                   else emptyList()
-        var idUsado = imdbMid ?: tmdbMid
-        if (crus.isEmpty() && imdbMid != null) {
-            crus = buscarPor("FenixFlix", base, tipo, tmdbMid, null)
-            idUsado = tmdbMid
+        // O FenixFlix aceita TMDB diretamente; evita uma chamada extra antes
+        // da primeira tentativa. IMDb fica como reserva quando TMDB volta vazio.
+        var crus = buscarPor("FenixFlix", base, tipo, tmdbMid, null)
+        var idUsado = tmdbMid
+        if (crus.isEmpty()) {
+            val imdbId = obterImdbId(tmdbId, serie)
+            val imdbMid = imdbId?.let {
+                if (serie) "$it:$temporada:$numero" else it
+            }
+            if (imdbMid != null) {
+                crus = buscarPor("FenixFlix", base, tipo, tmdbMid, imdbMid)
+                idUsado = imdbMid
+            }
         }
         val vistos = mutableSetOf<String>()
         val saida = linkedMapOf<String, MutableList<String>>()
