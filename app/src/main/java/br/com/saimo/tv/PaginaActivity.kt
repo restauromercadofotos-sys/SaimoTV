@@ -103,9 +103,7 @@ open class PaginaActivity : TelaComMenu() {
             text = nome
             visibility = android.view.View.VISIBLE
         }
-        // getIdentifier mantém compatibilidade com os recursos separados dos flavors.
-        val idGeneros = resources.getIdentifier("paginaGeneros", "id", packageName)
-        seletorGeneros = findViewById<TextView>(idGeneros).apply {
+        seletorGeneros = findViewById<TextView>(R.id.paginaGeneros).apply {
             visibility = if (todos) android.view.View.GONE else android.view.View.VISIBLE
             setOnClickListener { abrirSeletorGeneros() }
         }
