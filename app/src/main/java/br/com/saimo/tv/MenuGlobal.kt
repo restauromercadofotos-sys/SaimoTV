@@ -318,8 +318,27 @@ abstract class TelaComMenu : AppCompatActivity() {
         val abas = barra.findViewById<ViewGroup>(R.id.menuGlobalAbas)
         abas.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         val liberar = Runnable { abas.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS }
-        raiz.viewTreeObserver.addOnGlobalFocusChangeListener { _, novo ->
+
+        fun dentroDoMenu(view: View?): Boolean {
+            var atual = view
+            while (atual != null) {
+                if (atual === barra) return true
+                atual = atual.parent as? View
+            }
+            return false
+        }
+        raiz.viewTreeObserver.addOnGlobalFocusChangeListener { anterior, novo ->
             if (novo != null && abas.descendantFocusability == ViewGroup.FOCUS_BLOCK_DESCENDANTS) liberar.run()
+            // Ao subir do catálogo para a barra, o Android escolhia a aba mais
+            // à esquerda ("Início") pela geometria, mesmo estando em Filmes
+            // ou Séries. Redireciona a PRIMEIRA entrada para a aba atual.
+            // Navegação entre abas com esquerda/direita continua livre.
+            if (novo != null && dentroDoMenu(novo) && !dentroDoMenu(anterior)) {
+                val atual = abas.findViewWithTag<View>(aba)
+                if (atual != null && atual !== novo && atual.visibility == View.VISIBLE) {
+                    atual.requestFocus()
+                }
+            }
         }
         raiz.postDelayed(liberar, 2_000)
     }
