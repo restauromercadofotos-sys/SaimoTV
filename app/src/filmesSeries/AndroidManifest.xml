@@ -4,7 +4,11 @@
 
     <!-- O LumeFlix só registra catálogo e reprodução sob demanda. As telas
          abaixo pertencem exclusivamente ao aplicativo TV Ao Vivo. -->
-    <application>
+    <application
+        android:banner="@drawable/lumeflix_tv_banner"
+        android:icon="@drawable/lumeflix_app_icon"
+        android:roundIcon="@drawable/lumeflix_app_icon"
+        tools:replace="android:banner,android:icon,android:roundIcon">
         <activity android:name=".MainActivity" tools:node="remove" />
         <activity android:name=".GuideActivity" tools:node="remove" />
         <activity android:name=".EventosActivity" tools:node="remove" />
