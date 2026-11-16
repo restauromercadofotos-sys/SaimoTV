@@ -82,7 +82,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         private const val DO_INICIO = "player.inicio"
 
         /// Fonte que não entrega imagem até aqui é fonte morta que não deu erro.
-        private const val PRAZO_MS = 15_000L
+        private const val PRAZO_MS = 12_000L
         private const val IGNORAR_EVENTO_ANTERIOR_MS = 1_500L
         private const val ESCONDER_MS = 5_000L
         private const val CONTAGEM_S = 10
@@ -668,7 +668,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                 // Em TV Box de 2 GB, como a Mi Box 3, 5 s para retomar fazia
                 // fontes HD entrarem no ciclo toca/carrega. Mantém uma reserva
                 // maior antes do início e principalmente após um rebuffer.
-                .setBufferDurationsMs(30_000, 60_000, 8_000, 15_000)
+                .setBufferDurationsMs(30_000, 60_000, 5_000, 15_000)
                 .setTargetBufferBytes(96 * 1024 * 1024)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
