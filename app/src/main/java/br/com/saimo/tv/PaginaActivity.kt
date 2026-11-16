@@ -71,7 +71,11 @@ open class PaginaActivity : TelaComMenu() {
             aoFocar = { destaque.mostrar(it) }, paisagem = true)
     }
     private lateinit var destaque: Destaque
+    private lateinit var seletorGeneros: TextView
     private var montou = false
+    /** Posição de cada fileira para o seletor de gêneros saltar sem outra tela. */
+    private val indicePorGenero = linkedMapOf<String, Int>()
+    private var generosDaPagina: List<String> = emptyList()
     /// Os cartões das categorias do topo; o "Explorar" do fim usa o mesmo desenho.
     private var categoriasProntas: Inicio.Fila? = null
 
@@ -95,8 +99,14 @@ open class PaginaActivity : TelaComMenu() {
             GradeActivity.DORAMAS -> R.string.vod_doramas
             else -> R.string.vod_filmes
         })
-        // O menu do topo já diz em que página se está.
-        findViewById<TextView>(R.id.paginaNome).visibility = android.view.View.GONE
+        findViewById<TextView>(R.id.paginaNome).apply {
+            text = nome
+            visibility = android.view.View.VISIBLE
+        }
+        seletorGeneros = findViewById<TextView>(R.id.paginaGeneros).apply {
+            visibility = if (todos) android.view.View.GONE else android.view.View.VISIBLE
+            setOnClickListener { abrirSeletorGeneros() }
+        }
         destaque.padrao(nome, getString(R.string.vod_carregando))
         lifecycleScope.launch(semDerrubar) { montar() }
     }
@@ -170,17 +180,8 @@ open class PaginaActivity : TelaComMenu() {
             val bit = Generos.bit(genero)
             candidatos.any { it.generos and bit != 0 }
         }
-        if (categorias.isNotEmpty()) {
-            lista.add(0, Inicio.Fila("Categorias", listOf(
-                Inicio.Cartao("Todas as categorias", "", "≡") {
-                    Painel.mostrar(this, "Categorias", listOf(
-                        Painel.Item("Todos") { GradeActivity.abrir(this, tipo) }
-                    ) + categorias.map { genero ->
-                        Painel.Item(genero) { GradeActivity.abrir(this, tipo, genero) }
-                    })
-                }
-            )))
-        }
+        generosDaPagina = categorias
+        indicePorGenero.clear()
         lancamentos(candidatos)?.let { lista += Inicio.Fila(getString(R.string.pagina_lancamentos), it) }
 
         val porGenero = withContext(Dispatchers.Default) {
@@ -188,8 +189,36 @@ open class PaginaActivity : TelaComMenu() {
             generos.mapNotNull { g -> porGenero(candidatos, g)?.let { g to it } }
         }
         for ((g, itens) in porGenero) {
+            indicePorGenero[g] = lista.size
             lista += Inicio.Fila(g, itens.map { cartao(it.alvo, it.capa) } + verMais(tipo, g))
         }
+    }
+
+    /**
+     * Seletor no padrão de TV: abre com OK, escolhe com o direcional e leva o
+     * foco diretamente à fileira, sem trocar de tela nem perder a posição.
+     */
+    private fun abrirSeletorGeneros() {
+        if (generosDaPagina.isEmpty()) return
+        val itens = listOf(Painel.Item("Todos") { focarFileira(0) }) +
+            generosDaPagina.map { genero ->
+                Painel.Item(genero) { indicePorGenero[genero]?.let(::focarFileira) }
+            }
+        Painel.mostrar(this, "Gêneros", itens)
+    }
+
+    private fun focarFileira(posicao: Int) {
+        if (posicao !in 0 until (filas.adapter?.itemCount ?: 0)) return
+        filas.scrollToPosition(posicao)
+        fun tentar(restantes: Int) {
+            val linha = filas.findViewHolderForAdapterPosition(posicao)?.itemView
+            val horizontal = linha?.findViewById<RecyclerView>(R.id.filaCapas)
+            val primeiro = horizontal?.findViewHolderForAdapterPosition(0)?.itemView
+            if (primeiro?.requestFocus() == true || restantes <= 0) return
+            horizontal?.scrollToPosition(0)
+            filas.postDelayed({ tentar(restantes - 1) }, 45)
+        }
+        filas.post { tentar(8) }
     }
 
     /**
@@ -301,8 +330,13 @@ open class PaginaActivity : TelaComMenu() {
 
     private fun porGenero(candidatos: List<Candidato>, genero: String): List<Candidato>? {
         val bit = Generos.bit(genero)
-        return candidatos.filter { it.generos and bit != 0 }
-            .sortedByDescending { it.ano }.take(25)
+        return candidatos.asSequence()
+            .filter { it.generos and bit != 0 }
+            .sortedByDescending { it.ano }
+            // Uma fileira longa parece contínua no controle, sem manter dezenas
+            // de milhares de cartões duplicados em memória em cada gênero.
+            // O RecyclerView cria imagens apenas para a janela visível.
+            .take(400).toList()
             .takeIf { it.size >= 6 }
     }
 
