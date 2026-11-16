@@ -100,12 +100,10 @@ object MenuGlobal {
                     aba == Aba.AJUSTES -> Icones.so(this, icone)
                     icone != 0 -> Icones.inicio(this, icone)
                 }
-                // Na faixa superior, mover para a aba já a abre. O atraso
-                // curto evita disparo acidental quando o usuário segura a seta,
-                // mas elimina o segundo clique exigido anteriormente.
-                setOnFocusChangeListener { _, foco ->
-                    if (foco) aoFocar?.invoke()
-                }
+                // Foco sozinho não navega: o Android pode passar por esta aba
+                // ao mover o foco entre a barra e o conteúdo. Esquerda/direita
+                // abaixo abrem explicitamente o destino, sem trocar de tela ao
+                // entrar na barra vindo das categorias.
                 setOnKeyListener { v, codigo, evento ->
                     if (evento.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                     val passo = when (codigo) {
