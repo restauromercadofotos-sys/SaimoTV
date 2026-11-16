@@ -5,4 +5,8 @@
         <item name="android:windowActivityTransitions">true</item>
         <item name="android:colorAccent">@color/accent</item>
     </style>
+    <!-- Renderização imediata pelo WindowManager: sem tela/espera extra. -->
+    <style name="Theme.Saimo.Abertura" parent="Theme.Saimo">
+        <item name="android:windowBackground">@drawable/lumeflix_splash</item>
+    </style>
 </resources>
