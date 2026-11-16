@@ -312,7 +312,15 @@ open class PaginaActivity : TelaComMenu() {
 
     private fun mostrar(lista: List<Inicio.Fila>) {
         if (isFinishing || isDestroyed) return
-        adaptador.trocar(lista.toList())
+        adaptador.trocar(lista.map { fila ->
+            fila.copy(cartoes = fila.cartoes.distinctBy { cartao ->
+                val alvo = cartao.alvo
+                val id = alvo?.tmdbId?.takeIf { it > 0 }
+                    ?: alvo?.let { Generos.id(it.titulo, it.serie) }
+                if (id != null) "${alvo?.serie}|tmdb:$id"
+                else "${alvo?.serie}|${Generos.semAno(cartao.titulo).trim().lowercase(Locale.ROOT)}|${alvo?.ano.orEmpty()}"
+            })
+        })
         if (!montou) {
             montou = true
             focarQuandoPronto {

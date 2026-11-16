@@ -1,10 +1,14 @@
 package br.com.saimo.tv
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * As fileiras da tela inicial, prontas para desenhar.
@@ -49,6 +53,9 @@ object Destaques {
     /// as monta de novo a cada volta do player, e o arquivo quase nunca muda.
     @Volatile
     private var lidas: Pair<Long, List<Fila>>? = null
+
+    private val atualizador = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val atualizando = AtomicBoolean(false)
 
     suspend fun filas(context: Context): List<Fila> = withContext(Dispatchers.IO) {
         val local = File(File(context.filesDir, "vod"), ARQUIVO)
@@ -99,12 +106,35 @@ object Destaques {
     fun limpar() { lidas = null }
 
     private fun texto(context: Context): String? {
-        val pasta = File(context.filesDir, "vod").apply { mkdirs() }
+        val app = context.applicationContext
+        val pasta = File(app.filesDir, "vod").apply { mkdirs() }
         val local = File(pasta, ARQUIVO)
-        val fresco = local.exists() && local.length() > 0 &&
+        val temCache = local.exists() && local.length() > 0
+        val fresco = temCache &&
             System.currentTimeMillis() - local.lastModified() < VALIDADE_MS
-        if (fresco) return runCatching { local.readText() }.getOrNull()
 
+        if (temCache) {
+            val guardado = runCatching { local.readText() }.getOrNull()
+            if (fresco) return guardado
+            // Destaques mudam algumas vezes por dia: conteúdo vencido continua
+            // útil para abrir a tela, e a versão nova chega sem bloquear o foco.
+            if (atualizando.compareAndSet(false, true)) {
+                atualizador.launch {
+                    try {
+                        baixar(app, local)
+                    } finally {
+                        atualizando.set(false)
+                    }
+                }
+            }
+            return guardado
+        }
+        // Primeira abertura sem cache: busca uma vez; aberturas seguintes usam
+        // o arquivo local e deixam a atualização para trás.
+        return baixar(app, local)
+    }
+
+    private fun baixar(context: Context, local: File): String? {
         val baixado = runCatching {
             val base = Vod.BASE ?: return@runCatching null
             val pedido = Request.Builder().url(base + ARQUIVO)
@@ -114,13 +144,17 @@ object Destaques {
             Playback.client.newCall(pedido).execute().use { resposta ->
                 if (!resposta.isSuccessful) null else resposta.body?.string()
             }
-        }.getOrNull()
+        }.getOrNull() ?: return null
 
-        if (baixado != null && baixado.isNotBlank()) {
-            runCatching { local.writeText(baixado) }
-            return baixado
+        if (baixado.isBlank()) return null
+        runCatching {
+            val temporario = File(local.parentFile, "${local.name}.tmp")
+            temporario.writeText(baixado)
+            if (!temporario.renameTo(local)) {
+                local.writeText(baixado)
+                temporario.delete()
+            }
         }
-        // Rede fora: o que está em disco, mesmo vencido, é melhor que nada.
-        return runCatching { if (local.exists()) local.readText() else null }.getOrNull()
+        return baixado
     }
 }

@@ -19,6 +19,11 @@ permissions:
 
 jobs:
   build:
+    name: ${{ matrix.alvo }}
+    strategy:
+      fail-fast: false
+      matrix:
+        alvo: [filmes, tv]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -42,8 +47,9 @@ jobs:
           printf '%s' "$CI_KEYSTORE_BASE64" | base64 --decode > ci-debug.jks
           printf 'storeFile=../ci-debug.jks\nstoreType=PKCS12\nstorePassword=android\nkeyAlias=apps\nkeyPassword=android\n' > keystore.properties
       - name: Testar e compilar o aplicativo selecionado
+        if: github.event_name == 'pull_request' || inputs.alvo == 'ambos' || inputs.alvo == matrix.alvo
         env:
-          ALVO: ${{ github.event_name == 'pull_request' && 'ambos' || inputs.alvo }}
+          ALVO: ${{ matrix.alvo }}
         run: |
           if [ "$ALVO" = "tv" ]; then
             ./gradlew --no-daemon :app:testAoVivoDebugUnitTest :app:assembleAoVivoDebug
@@ -55,14 +61,14 @@ jobs:
               :app:assembleAoVivoDebug :app:assembleFilmesSeriesDebug
           fi
       - name: APK de TV ao vivo
-        if: github.event_name == 'pull_request' || inputs.alvo == 'tv' || inputs.alvo == 'ambos'
+        if: matrix.alvo == 'tv' && (github.event_name == 'pull_request' || inputs.alvo == 'tv' || inputs.alvo == 'ambos')
         uses: actions/upload-artifact@v4
         with:
           name: saimo-tv-ao-vivo-debug
           path: app/build/outputs/apk/aoVivo/debug/*.apk
           if-no-files-found: error
       - name: APK de filmes e séries
-        if: github.event_name == 'pull_request' || inputs.alvo == 'filmes' || inputs.alvo == 'ambos'
+        if: matrix.alvo == 'filmes' && (github.event_name == 'pull_request' || inputs.alvo == 'filmes' || inputs.alvo == 'ambos')
         uses: actions/upload-artifact@v4
         with:
           name: saimo-filmes-series-debug
@@ -72,6 +78,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: resultados-dos-testes
+          name: resultados-dos-testes-${{ matrix.alvo }}
           path: app/build/reports/tests/
           if-no-files-found: ignore

@@ -97,19 +97,42 @@ object Vod {
     }
 
     /**
-     * O índice, sempre da rede quando ela responde.
-     *
-     * Ele é o único arquivo que dá sentido aos outros: cada filme guarda o
-     * número da base, não o endereço. Quando a lista de origens é regerada em
-     * outra ordem, um índice velho em disco aponta cada filme para o servidor
-     * errado e o catálogo inteiro passa a abrir em tela preta. É menos de um
-     * kilobyte, então vale buscar de novo a cada abertura e deixar o disco só
-     * como reserva para quando a rede falhar.
+     * Usa o índice local sem esperar a rede quando ele ainda corresponde às
+     * bases que geraram as fatias; índices vencidos são atualizados por trás.
+     * Se as bases não baterem, busca antes de servir o cache para não montar
+     * links com o servidor errado.
      */
     private suspend fun indiceAtual(context: Context): String? = withContext(Dispatchers.IO) {
-        baixar(context, "indice.txt") ?: run {
-            val local = File(File(context.filesDir, "vod"), "indice.txt")
-            if (local.exists() && local.length() > 0) local.readText() else null
+        val local = File(File(context.filesDir, "vod"), "indice.txt")
+        val guardado = runCatching { if (local.exists() && local.length() > 0) local.readText() else null }.getOrNull()
+        if (guardado != null) {
+            val basesGuardadas = guardado.lineSequence()
+                .filter { it.startsWith("base:") }
+                .mapNotNull { linha ->
+                    linha.removePrefix("base:").trim().split(" ", limit = 2)
+                        .getOrNull(1)?.takeIf { it.isNotBlank() }
+                }.toList()
+            val marca = runCatching { File(local.parentFile, "bases.txt").readText() }.getOrNull()
+            val compativel = basesGuardadas.isNotEmpty() &&
+                marca == basesGuardadas.joinToString("\n")
+            if (compativel) {
+                if (System.currentTimeMillis() - local.lastModified() > VALIDADE_MS) {
+                    conferirIndiceDepois(context.applicationContext)
+                }
+                return@withContext guardado
+            }
+        }
+        baixar(context, "indice.txt") ?: guardado
+    }
+
+    private fun conferirIndiceDepois(context: Context) {
+        if (!conferindo.add("indice.txt")) return
+        fundo.launch {
+            try {
+                baixar(context, "indice.txt")
+            } finally {
+                conferindo.remove("indice.txt")
+            }
         }
     }
 

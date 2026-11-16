@@ -100,26 +100,10 @@ object MenuGlobal {
                     aba == Aba.AJUSTES -> Icones.so(this, icone)
                     icone != 0 -> Icones.inicio(this, icone)
                 }
-                // Na faixa superior, mover para a aba já a abre. O atraso
-                // curto evita disparo acidental quando o usuário segura a seta,
-                // mas elimina o segundo clique exigido anteriormente.
-                var abrirAoFocar: Runnable? = null
-                setOnFocusChangeListener { v, foco ->
-                    abrirAoFocar?.let(v::removeCallbacks)
-                    abrirAoFocar = null
-                    if (foco) {
-                        aoFocar?.invoke()
-                        if (aba != atual) {
-                            abrirAoFocar = Runnable {
-                                if (!v.hasFocus() || tela.isFinishing) return@Runnable
-                                if (aba == Aba.INICIO && aoInicio != null) aoInicio()
-                                else ir(tela, aba, atual)
-                            }.also { v.postDelayed(it, 180) }
-                        }
-                    }
-                }
-                // Para os lados, o menu anda de aba em aba e para nas pontas:
-                // no fim, a busca do sistema achava algo "à direita" lá embaixo.
+                // Foco sozinho não navega: o Android pode passar por esta aba
+                // ao mover o foco entre a barra e o conteúdo. Esquerda/direita
+                // abaixo abrem explicitamente o destino, sem trocar de tela ao
+                // entrar na barra vindo das categorias.
                 setOnKeyListener { v, codigo, evento ->
                     if (evento.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                     val passo = when (codigo) {
@@ -129,12 +113,11 @@ object MenuGlobal {
                     }
                     var i = abas.indexOfChild(v) + passo
                     while (i in 0 until abas.childCount && abas.getChildAt(i).visibility != View.VISIBLE) i += passo
-                    abas.getChildAt(i)?.requestFocus()
+                    val destino = abas.getChildAt(i)
+                    if (destino != null && destino.requestFocus()) destino.performClick()
                     true
                 }
-                setOnClickListener { v ->
-                    abrirAoFocar?.let(v::removeCallbacks)
-                    abrirAoFocar = null
+                setOnClickListener {
                     if (aba == Aba.INICIO && aoInicio != null) aoInicio() else ir(tela, aba, atual)
                 }
             })

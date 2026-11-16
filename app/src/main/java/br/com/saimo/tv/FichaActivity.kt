@@ -323,6 +323,7 @@ class FichaActivity : TelaComMenu() {
 
     private fun carregar() {
         val carregando = findViewById<ProgressBar>(R.id.fichaCarregando)
+        findViewById<TextView>(R.id.fichaTitulo).visibility = View.INVISIBLE
         lifecycleScope.launch(semDerrubar) {
             // Sem as fichas em memória, o id do título não é conhecido. O
             // arquivo já está em disco na maioria das vezes: é instantâneo.
@@ -352,6 +353,7 @@ class FichaActivity : TelaComMenu() {
             carregando.visibility = View.GONE
             if (isFinishing || isDestroyed) return@launch
             if (ficha == null || ficha.vazia) {
+                findViewById<TextView>(R.id.fichaTitulo).visibility = View.VISIBLE
                 findViewById<TextView>(R.id.fichaSinopse).text = getString(R.string.vod_ficha_vazia)
                 return@launch
             }
@@ -361,6 +363,39 @@ class FichaActivity : TelaComMenu() {
     }
 
     private fun mostrar(ficha: Detalhes.Ficha) {
+        val nome = findViewById<TextView>(R.id.fichaTitulo)
+        nome.text = ficha.titulo.ifBlank { Generos.semAno(alvo.titulo) }
+        val urlLogo = ficha.logo
+        if (urlLogo.isNullOrBlank()) {
+            nome.visibility = View.VISIBLE
+        } else {
+            val grupo = nome.parent as? LinearLayout
+            if (grupo != null) {
+                val logo = ImageView(this).apply {
+                    visibility = View.INVISIBLE
+                    contentDescription = nome.text
+                    adjustViewBounds = true
+                    scaleType = ImageView.ScaleType.FIT_START
+                    val d = resources.displayMetrics.density
+                    layoutParams = LinearLayout.LayoutParams((280*d).toInt(), (80*d).toInt())
+                }
+                grupo.addView(logo, grupo.indexOfChild(nome))
+                logo.load(urlLogo) {
+                    listener(
+                        onSuccess = { _, _ ->
+                            logo.visibility = View.VISIBLE
+                            nome.visibility = View.GONE
+                        },
+                        onError = { _, _ ->
+                            logo.visibility = View.GONE
+                            nome.visibility = View.VISIBLE
+                        },
+                    )
+                }
+            } else {
+                nome.visibility = View.VISIBLE
+            }
+        }
         ficha.fundo?.let { endereco ->
             findViewById<ImageView>(R.id.fichaFundo).load(endereco) {
                 crossfade(400)

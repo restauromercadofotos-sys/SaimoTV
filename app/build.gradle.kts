@@ -141,3 +141,8 @@ dependencies {
 kotlin {
     compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 }
+
+// O guia XMLTV pertence somente ao APK de TV ao vivo.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    if (name.contains("FilmesSeries")) exclude("**/Epg*Test.class")
+}
