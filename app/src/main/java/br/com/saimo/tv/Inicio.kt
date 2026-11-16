@@ -36,6 +36,8 @@ object Inicio {
 
     /// A fileira do último cartão focado: rolar a tela só quando ela muda.
     private var ultimaFileira = java.lang.ref.WeakReference<View>(null)
+    /** Invalida tentativas de foco pendentes ao apertar as setas rapidamente. */
+    private val transicoesDeFoco = java.util.WeakHashMap<RecyclerView, Int>()
 
     /**
      * Um item da fileira.
@@ -259,7 +261,13 @@ object Inicio {
                 ultimaFileira = java.lang.ref.WeakReference(fileira)
                 // A fileira nova sobe para o topo da lista, sempre no mesmo lugar.
                 val lista = fileira.parent as? RecyclerView ?: return@setOnFocusChangeListener
-                lista.post { lista.smoothScrollBy(0, fileira.top - lista.paddingTop) }
+                lista.post {
+                    // O Runnable pode executar depois que outra fileira ganhou
+                    // foco. Não rolar uma fileira antiga para cima de novo.
+                    if (ultimaFileira.get() !== fileira || fileira.parent !== lista) return@post
+                    val deslocamento = fileira.top - lista.paddingTop
+                    if (deslocamento != 0) lista.smoothScrollBy(0, deslocamento)
+                }
             }
             holder.itemView.setOnKeyListener { _, codigo, evento ->
                 if (Cartoes.segurarNasPontas(holder, codigo, evento)) return@setOnKeyListener true
@@ -286,24 +294,51 @@ object Inicio {
             val destino = atual + passo
             val total = vertical.adapter?.itemCount ?: return false
             if (atual == RecyclerView.NO_POSITION || destino !in 0 until total) return false
-            focarNaFileira(vertical, destino, holder.bindingAdapterPosition)
+            val transicao = (transicoesDeFoco[vertical] ?: 0) + 1
+            transicoesDeFoco[vertical] = transicao
+            focarNaFileira(vertical, destino, holder.bindingAdapterPosition, transicao)
             return true
         }
 
-        private fun focarNaFileira(vertical: RecyclerView, fila: Int, colunaAtual: Int, tentativas: Int = 8) {
+        /**
+         * Se o cartão de destino ainda não existe, estaciona o foco NO
+         * RecyclerView antes do scroll. Sem isso, a reciclagem do cartão atual
+         * faz o Android TV focar brevemente a primeira aba do menu ("Início"),
+         * gerando a piscada amarela ao navegar entre as categorias.
+         */
+        private fun manterFocoNoCatalogo(vertical: RecyclerView) {
+            if (BuildConfig.TV_AO_VIVO || vertical.hasFocus()) return
+            vertical.isFocusable = true
+            val anterior = vertical.descendantFocusability
+            vertical.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+            vertical.requestFocus()
+            vertical.descendantFocusability = anterior
+        }
+
+        private fun focarNaFileira(
+            vertical: RecyclerView, fila: Int, colunaAtual: Int,
+            transicao: Int, tentativas: Int = 12,
+        ) {
+            if (transicoesDeFoco[vertical] != transicao) return
             val linha = vertical.findViewHolderForAdapterPosition(fila)?.itemView
             val horizontal = linha?.findViewById<RecyclerView>(R.id.filaCapas)
             if (horizontal == null) {
+                manterFocoNoCatalogo(vertical)
                 vertical.scrollToPosition(fila)
-                if (tentativas > 0) vertical.post { focarNaFileira(vertical, fila, colunaAtual, tentativas - 1) }
+                if (tentativas > 0) vertical.postDelayed({
+                    focarNaFileira(vertical, fila, colunaAtual, transicao, tentativas - 1)
+                }, 16)
                 return
             }
             val coluna = indiceNaFilaVertical(colunaAtual, horizontal.adapter?.itemCount ?: 0)
             if (coluna < 0) return
             val alvo = horizontal.findViewHolderForAdapterPosition(coluna)?.itemView
             if (alvo?.requestFocus() == true) return
+            manterFocoNoCatalogo(vertical)
             horizontal.scrollToPosition(coluna)
-            if (tentativas > 0) horizontal.post { focarNaFileira(vertical, fila, colunaAtual, tentativas - 1) }
+            if (tentativas > 0) horizontal.postDelayed({
+                focarNaFileira(vertical, fila, colunaAtual, transicao, tentativas - 1)
+            }, 16)
         }
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
