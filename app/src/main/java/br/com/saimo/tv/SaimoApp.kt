@@ -68,6 +68,7 @@ class SaimoApp : Application(), SingletonImageLoader.Factory {
             }
         })
         Preferencias.iniciar(this)
+        Resolvedor404.iniciarBestcine(this)
         Upscaling.iniciar(this)
         Enderecos.iniciar(this)
         MinhasListas.iniciar(this)
