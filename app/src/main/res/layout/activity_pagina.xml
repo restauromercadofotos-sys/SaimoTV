@@ -35,17 +35,41 @@
         android:clipChildren="false"
         android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/paginaNome"
-            android:layout_width="wrap_content"
+        <!-- Cabeçalho no padrão de catálogo para TV: nome da seção e um
+             único seletor claro, alcançável pelo controle remoto. -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="56dp"
-            android:layout_marginTop="18dp"
-            android:fontFamily="sans-serif-medium"
-            android:letterSpacing="0.1"
-            android:textAllCaps="true"
-            android:textColor="@color/accent"
-            android:textSize="15sp" />
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/paginaNome"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@color/text_primary"
+                android:textSize="26sp" />
+
+            <TextView
+                android:id="@+id/paginaGeneros"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="18dp"
+                android:background="@drawable/aba_menu"
+                android:focusable="true"
+                android:clickable="true"
+                android:fontFamily="sans-serif-medium"
+                android:paddingStart="18dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="18dp"
+                android:paddingBottom="8dp"
+                android:text="Gêneros  ▾"
+                android:textColor="@color/texto_botao_ficha"
+                android:textSize="17sp" />
+        </LinearLayout>
 
         <!-- O destaque: o que está focado agora. -->
         <LinearLayout
@@ -53,7 +77,7 @@
             android:layout_width="560dp"
             android:layout_height="160dp"
             android:layout_marginStart="56dp"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="4dp"
             android:gravity="bottom"
             android:orientation="vertical">
             <TextView

@@ -110,15 +110,17 @@ class FichaActivity : TelaComMenu() {
         // O topo ocupa a primeira tela inteira; episódios, elenco e parecidos
         // aparecem rolando para baixo com o direcional.
         findViewById<View>(R.id.fichaTopo).minimumHeight =
-            (resources.displayMetrics.heightPixels * if (alvo.serie) 0.58f else 0.66f).toInt()
-        if (alvo.serie) {
+            (resources.displayMetrics.density * if (BuildConfig.TV_AO_VIVO) 340 else 290).toInt()
+        if (!BuildConfig.TV_AO_VIVO) {
+            assistir.setBackgroundResource(R.drawable.acao_lumeflix)
+            assistir.setTextColor(android.graphics.Color.BLACK)
             findViewById<View>(R.id.fichaCapaGrupo).visibility = View.GONE
             findViewById<LinearLayout>(R.id.fichaInfo).apply {
                 val parametros = layoutParams as LinearLayout.LayoutParams
                 parametros.marginStart = 0
                 layoutParams = parametros
             }
-            findViewById<TextView>(R.id.fichaTitulo).textSize = 42f
+            findViewById<TextView>(R.id.fichaTitulo).textSize = 32f
         }
         findViewById<View>(R.id.fichaVersao).setOnFocusChangeListener(crescerNoFoco)
         findViewById<RecyclerView>(R.id.fichaEpisodios).apply {
@@ -260,7 +262,7 @@ class FichaActivity : TelaComMenu() {
                 tag = t
                 textSize = 17f
                 setTextColor(androidx.core.content.ContextCompat.getColorStateList(context, R.color.texto_botao_ficha))
-                setBackgroundResource(R.drawable.botao_player)
+                setBackgroundResource(if (BuildConfig.TV_AO_VIVO) R.drawable.botao_player else R.drawable.temporada_lume)
                 isFocusable = true
                 val d = resources.displayMetrics.density
                 setPadding((20 * d).toInt(), (8 * d).toInt(), (20 * d).toInt(), (8 * d).toInt())
@@ -380,6 +382,16 @@ class FichaActivity : TelaComMenu() {
             visibility = if (ficha.generos.isEmpty()) View.GONE else View.VISIBLE
         }
         findViewById<TextView>(R.id.fichaSinopse).text = ficha.sinopse
+        if (!BuildConfig.TV_AO_VIVO) {
+            findViewById<TextView>(R.id.fichaSinopse).apply {
+                contentDescription = ficha.sinopse + ". OK para ler a sinopse completa."
+                setOnClickListener {
+                    android.app.AlertDialog.Builder(this@FichaActivity)
+                        .setTitle(ficha.titulo).setMessage(ficha.sinopse)
+                        .setPositiveButton(android.R.string.ok, null).show()
+                }
+            }
+        }
 
         val creditos = listOfNotNull(
             ficha.assinatura.takeIf { it.isNotBlank() }?.let {
@@ -474,7 +486,7 @@ class FichaActivity : TelaComMenu() {
 
         /// O crescimento no foco é a GPU, não uma nova medição de layout.
         internal val crescerNoFoco = View.OnFocusChangeListener { view, foco ->
-            val escala = if (foco) 1.06f else 1f
+            val escala = if (foco && (BuildConfig.TV_AO_VIVO || view !is TextView)) 1.06f else 1f
             view.animate().scaleX(escala).scaleY(escala).setDuration(120).start()
         }
     }
@@ -575,11 +587,21 @@ private class EpisodiosAdapter(
         holder.visto.visibility = if (fracao != null && fracao >= 1f) View.VISIBLE else View.GONE
         holder.progresso.visibility = if (fracao != null && fracao < 1f) View.VISIBLE else View.GONE
         fracao?.let { holder.progresso.progress = (it * 1000).toInt() }
+        holder.imagem.dispose()
+        holder.imagem.setImageDrawable(null)
         if (dados?.imagem != null) {
+            holder.numero.visibility = View.INVISIBLE
             holder.imagem.visibility = View.VISIBLE
-            holder.imagem.load(dados.imagem) { crossfade(150) }
+            holder.imagem.load(dados.imagem) {
+                crossfade(150)
+                listener(onError = { _, _ ->
+                    holder.imagem.visibility = View.GONE
+                    holder.numero.visibility = View.VISIBLE
+                })
+            }
         } else {
-            holder.imagem.dispose(); holder.imagem.setImageDrawable(null)
+            holder.imagem.visibility = View.GONE
+            holder.numero.visibility = View.VISIBLE
         }
         holder.itemView.setOnClickListener { aoEscolher(ep) }
         holder.itemView.nextFocusUpId = acima

@@ -20,7 +20,7 @@ import java.util.Date
 import java.util.Locale
 
 /** A aba do menu do topo que cada tela representa. */
-enum class Aba { INICIO, AO_VIVO, EVENTOS, ON_DEMAND, FAVORITOS, RADIOS, EXTRAS, BUSCAR, APOIE, AJUSTES, NENHUMA }
+enum class Aba { INICIO, AO_VIVO, EVENTOS, ON_DEMAND, SERIES, FAVORITOS, RADIOS, EXTRAS, BUSCAR, APOIE, AJUSTES, NENHUMA }
 
 /**
  * O menu do topo, o mesmo em todas as telas.
@@ -48,7 +48,7 @@ object MenuGlobal {
             layoutParams = LinearLayout.LayoutParams((28 * d).toInt(), (28 * d).toInt()).apply { marginEnd = (8 * d).toInt() }
         } else TextView(tela).apply {
             text = tela.getString(R.string.app_name)
-            textSize = 23f
+            textSize = 21f
             typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
             setTextColor(ContextCompat.getColor(tela, R.color.accent))
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -73,7 +73,8 @@ object MenuGlobal {
             Triple(Aba.AJUSTES, R.string.menu_ajustes, R.drawable.ic_settings),
         ) else listOf(
             Triple(Aba.INICIO, R.string.menu_inicio, 0),
-            Triple(Aba.ON_DEMAND, R.string.menu_on_demand, 0),
+            Triple(Aba.ON_DEMAND, R.string.vod_filmes, 0),
+            Triple(Aba.SERIES, R.string.vod_series, 0),
             Triple(Aba.FAVORITOS, R.string.vod_favoritos, 0),
             Triple(Aba.BUSCAR, R.string.menu_buscar, R.drawable.ic_search),
             Triple(Aba.AJUSTES, R.string.menu_ajustes, R.drawable.ic_settings),
@@ -83,7 +84,7 @@ object MenuGlobal {
             abas.addView(TextView(tela).apply {
                 text = tela.getString(texto)
                 tag = aba
-                textSize = 15f
+                textSize = if (BuildConfig.TV_AO_VIVO) 15f else 14f
                 maxLines = 1
                 typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
                 setTextColor(ContextCompat.getColorStateList(tela, R.color.texto_botao_ficha))
@@ -99,7 +100,24 @@ object MenuGlobal {
                     aba == Aba.AJUSTES -> Icones.so(this, icone)
                     icone != 0 -> Icones.inicio(this, icone)
                 }
-                setOnFocusChangeListener { _, foco -> if (foco) aoFocar?.invoke() }
+                // Na faixa superior, mover para a aba já a abre. O atraso
+                // curto evita disparo acidental quando o usuário segura a seta,
+                // mas elimina o segundo clique exigido anteriormente.
+                var abrirAoFocar: Runnable? = null
+                setOnFocusChangeListener { v, foco ->
+                    abrirAoFocar?.let(v::removeCallbacks)
+                    abrirAoFocar = null
+                    if (foco) {
+                        aoFocar?.invoke()
+                        if (aba != atual) {
+                            abrirAoFocar = Runnable {
+                                if (!v.hasFocus() || tela.isFinishing) return@Runnable
+                                if (aba == Aba.INICIO && aoInicio != null) aoInicio()
+                                else ir(tela, aba, atual)
+                            }.also { v.postDelayed(it, 180) }
+                        }
+                    }
+                }
                 // Para os lados, o menu anda de aba em aba e para nas pontas:
                 // no fim, a busca do sistema achava algo "à direita" lá embaixo.
                 setOnKeyListener { v, codigo, evento ->
@@ -114,7 +132,9 @@ object MenuGlobal {
                     abas.getChildAt(i)?.requestFocus()
                     true
                 }
-                setOnClickListener {
+                setOnClickListener { v ->
+                    abrirAoFocar?.let(v::removeCallbacks)
+                    abrirAoFocar = null
                     if (aba == Aba.INICIO && aoInicio != null) aoInicio() else ir(tela, aba, atual)
                 }
             })
@@ -164,7 +184,8 @@ object MenuGlobal {
             Aba.INICIO, Aba.NENHUMA -> null
             Aba.AO_VIVO -> Intent(tela, MainActivity::class.java)
             Aba.EVENTOS -> Intent(tela, EventosActivity::class.java)
-            Aba.ON_DEMAND -> Intent(tela, OnDemandActivity::class.java)
+            Aba.ON_DEMAND -> PaginaActivity.intent(tela, GradeActivity.FILMES)
+            Aba.SERIES -> PaginaActivity.intent(tela, GradeActivity.SERIES)
             Aba.FAVORITOS -> GradeActivity.intent(tela, GradeActivity.FAVORITOS)
             Aba.RADIOS -> Intent(tela, RadiosActivity::class.java)
             Aba.EXTRAS -> GradeActivity.intent(tela, GradeActivity.EXTRAS)
@@ -255,7 +276,7 @@ abstract class TelaComMenu : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.setBackgroundDrawableResource(R.drawable.fundo_app)
+        window.setBackgroundDrawableResource(if (BuildConfig.TV_AO_VIVO) R.drawable.fundo_app else R.drawable.fundo_lumeflix)
     }
 
     override fun onResume() {

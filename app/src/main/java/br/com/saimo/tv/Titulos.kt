@@ -14,8 +14,13 @@ import androidx.media3.common.util.UnstableApi
 @UnstableApi
 object Titulos {
 
-    /** Uma fonte tocável, com a versão (dublado/legendado) a que pertence. */
-    data class Opcao(val versao: String, val url: String)
+    /** Uma fonte tocável, com versão e provedor quando veio de um addon. */
+    data class Opcao(
+        val versao: String,
+        val url: String,
+        val origem: String? = Resolvedor404.origem(url),
+        val qualidade: String? = Resolvedor404.qualidade(url),
+    )
 
     /** Um episódio com todas as versões e fontes juntas. */
     data class Ep(val temporada: Int, val numero: Int, val fontes: Map<String, List<String>>) {
@@ -116,15 +121,9 @@ object Titulos {
         } else {
             val filme = juntarGrafias(context, achado)
             if (filme != null) {
-                // 404: acrescenta fontes dos addons como reserva no fim da fila
-                val extras = if (tmdb > 0) Resolvedor404.fontes(tmdb, serie = false) else emptyMap()
-                val comExtras = if (extras.isNotEmpty()) {
-                    val todas = filme.fontes.keys + extras.keys
-                    todas.associateWith { v ->
-                        (filme.fontes[v].orEmpty() + extras[v].orEmpty()).distinct()
-                    }
-                } else filme.fontes
-                return Resolvido(alvo, filme.titulo, Filme(filme.titulo, comExtras), emptyList(), tmdb)
+                // O catálogo já tem links: abre imediatamente. Os addons são
+                // consultados pelo player apenas se as fontes locais falharem.
+                return Resolvido(alvo, filme.titulo, filme, emptyList(), tmdb)
             }
             // 404: filme novo / lancamento que NAO esta no catalogo local de filmes!
             if (tmdb > 0) {
@@ -190,6 +189,21 @@ object Titulos {
     /** Servidor (host sem "www.") de uma url de fonte, ou vazio. */
     fun servidor(url: String): String =
         runCatching { java.net.URI(url).host }.getOrNull()?.removePrefix("www.")?.lowercase().orEmpty()
+
+    /**
+     * Nome legível da fonte. Addons preservam o nome informado pelo resolvedor;
+     * fontes antigas usam o primeiro trecho do host. IPs ficam sem nome para a
+     * interface manter apenas a sequência "Fonte N".
+     */
+    fun identificadorFonte(opcao: Opcao): String? {
+        opcao.origem?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        val host = servidor(opcao.url)
+        if (host.isBlank() || ':' in host ||
+            host.matches(Regex("""\d{1,3}(\.\d{1,3}){3}"""))) return null
+        return host.substringBefore('.').takeIf { nome ->
+            nome.isNotBlank() && nome.any { it.isLetter() }
+        }?.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+    }
 
     /**
      * Fonte do episódio novo que mais se parece com a que tocava: a primeira do

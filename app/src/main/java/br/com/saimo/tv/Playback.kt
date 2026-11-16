@@ -25,6 +25,7 @@ import androidx.media3.exoplayer.drm.LocalMediaDrmCallback
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 
 /**
  * Turns a catalog source into something ExoPlayer can play.
@@ -39,6 +40,10 @@ private const val DNS_VALIDADE_MS = 5 * 60_000L
 
 @UnstableApi
 object Playback {
+
+    // O padrão do Media3 repete cada carga três vezes antes de avisar o app.
+    // Uma repetição basta: o player externo já troca para a próxima fonte.
+    private val politicaDeFalhaRapida = DefaultLoadErrorHandlingPolicy(1)
 
     /** `/api/stream` só escolhe o destino quando chamado; o player precisa do endereço final. */
     fun ehEnderecoDinamico(url: String): Boolean =
@@ -71,7 +76,12 @@ object Playback {
                     embrulhado.queryParameter("url")?.takeIf { it.startsWith("http") } ?: destino
                 } else destino
             }
-        }.getOrNull()
+        }.getOrElse {
+            // Falha de transporte, TLS, DNS ou resposta inesperada não prova
+            // que o vídeo inexiste. Entrega a URL original ao ExoPlayer e deixa
+            // a tentativa usar o prazo normal antes de trocar de servidor.
+            url
+        }
 
         if (!doServidor.isNullOrBlank()) {
             return doServidor
@@ -250,17 +260,21 @@ object Playback {
         val item = itemBuilder.build()
         return when {
             source.isDash -> DashMediaSource.Factory(http)
+                .setLoadErrorHandlingPolicy(politicaDeFalhaRapida)
                 .setDrmSessionManagerProvider { clearKeyManager(source) }
                 .createMediaSource(item)
             source.isHls ->
                 HlsMediaSource.Factory(http)
+                    .setLoadErrorHandlingPolicy(politicaDeFalhaRapida)
                     .setAllowChunklessPreparation(true)
                     .createMediaSource(item)
             // Fluxo MPEG-TS cru, servido direto e não por playlist. Metade das
             // listas de IPTV é assim, muitas vezes sem extensão nenhuma na URL.
             // Mandá-lo para o HLS é pedir uma playlist a quem só tem vídeo: o
             // canal não abria no TV Box e abria no Mac, que passa pelo ffmpeg.
-            else -> ProgressiveMediaSource.Factory(http).createMediaSource(item)
+            else -> ProgressiveMediaSource.Factory(http)
+                .setLoadErrorHandlingPolicy(politicaDeFalhaRapida)
+                .createMediaSource(item)
         }
     }
 

@@ -4,9 +4,9 @@
     <color name="surface_card">#E6101010</color>
     <color name="surface_panel">#FA080808</color>
     <color name="surface_raised">#FF202020</color>
-    <color name="accent">#C99700</color>
-    <color name="accent_dim">#66C99700</color>
-    <color name="accent_edge">#99C99700</color>
+    <color name="accent">#A98232</color>
+    <color name="accent_dim">#66A98232</color>
+    <color name="accent_edge">#99A98232</color>
     <color name="text_primary">#FFFFFFFF</color>
     <color name="text_secondary">#FFB3B3B3</color>
     <color name="text_faint">#FF737373</color>

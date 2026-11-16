@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+        <FrameLayout
+            android:id="@+id/inicioBanner"
+            android:layout_width="match_parent"
+            android:layout_height="260dp"
+            android:layout_marginStart="32dp"
+            android:layout_marginEnd="32dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/painel_banner"
+            android:clipToOutline="true">
+    <FrameLayout
+        android:id="@+id/inicioFundoGrupo"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0">
+        <ImageView
+            android:id="@+id/inicioFundo"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="centerCrop" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_destaque_lado" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_destaque_baixo" />
+        <View android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/banner_bordas" />
+    </FrameLayout>
+
+        <LinearLayout
+            android:id="@+id/inicioDestaque"
+            android:layout_width="480dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:layout_marginStart="24dp"
+            android:layout_marginBottom="22dp"
+            android:gravity="bottom"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/inicioTitulo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textSize="28sp"
+                    android:letterSpacing="0" />
+            <TextView
+                android:id="@+id/inicioMeta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/accent"
+                android:textSize="16sp" />
+            <TextView
+                android:id="@+id/inicioSinopse"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:ellipsize="end"
+                android:lineSpacingMultiplier="1.15"
+                android:maxLines="2"
+                android:textColor="#D9FFFFFF"
+                android:textSize="14sp" />
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
+            <TextView
+                android:id="@+id/inicioAssistir"
+                android:layout_width="144dp"
+                android:layout_height="44dp"
+                android:layout_marginTop="12dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:background="@drawable/acao_lumeflix"
+                android:focusable="true"
+                android:gravity="center"
+                android:fontFamily="sans-serif-medium"
+                android:text="Assistir"
+                android:textColor="#101010"
+                android:textSize="16sp"
+                android:visibility="gone" />
+            <TextView
+                android:id="@+id/inicioInformacoes"
+                android:layout_width="180dp"
+                android:layout_marginStart="12dp"
+                android:layout_height="44dp"
+                android:layout_marginTop="12dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:background="@drawable/botao_ficha"
+                android:focusable="true"
+                android:gravity="center"
+                android:fontFamily="sans-serif-medium"
+                android:text="Mais informações"
+                android:textColor="@color/texto_botao_ficha"
+                android:textSize="16sp"
+                android:visibility="gone" />
+
+            </LinearLayout>
+        </LinearLayout>
+
+        </FrameLayout>
+        <br.com.saimo.tv.ListaSemFuga
+            android:id="@+id/inicioFilas"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipChildren="true"
+            android:clipToPadding="false"
+            android:paddingStart="14dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="36dp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/escolhaStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="28dp"
+        android:background="@drawable/bg_card"
+        android:paddingStart="18dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="18dp"
+        android:paddingBottom="8dp"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp"
+        android:visibility="gone" />
+</FrameLayout>

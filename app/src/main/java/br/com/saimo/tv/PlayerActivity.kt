@@ -82,7 +82,8 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         private const val DO_INICIO = "player.inicio"
 
         /// Fonte que não entrega imagem até aqui é fonte morta que não deu erro.
-        private const val PRAZO_MS = 15_000L
+        private const val PRAZO_MS = 12_000L
+        private const val IGNORAR_EVENTO_ANTERIOR_MS = 1_500L
         private const val ESCONDER_MS = 5_000L
         private const val CONTAGEM_S = 10
         private const val ICONE_PLAY = "\u0000play"
@@ -162,6 +163,8 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     private var retomadas = 0
     private var tocou = false
     private var tentativaDesde = 0L
+    /** Janela que descarta eventos atrasados da fonte que acabou de ser trocada. */
+    private var ignorarFalhaAte = 0L
     /** Endereço que o player recebeu de fato (o `/api/stream` já resolvido). */
     private var urlTocando: String? = null
     /** Alguma fonte deste título respondeu que o vídeo não existe ainda. */
@@ -394,12 +397,18 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         herdarFonte: Boolean = false,
         startTime: Long = 0L,
     ) {
-        if (versao !in fontes.keys) versao = if (Preferencias.versao in fontes) Preferencias.versao
-                                              else fontes.keys.firstOrNull() ?: "dub"
-        opcoes = Titulos.ordem(fontes, versao)
+        val lembrada = fonteLembrada(r)
+        if (lembrada != null) versao = lembrada.versao
+        else if (versao !in fontes.keys) versao = if (Preferencias.versao in fontes) Preferencias.versao
+                                                   else fontes.keys.firstOrNull() ?: "dub"
+        opcoes = ordenarPorDesempenho(Titulos.ordem(fontes, versao))
+        // A fonte que já funcionou neste título continua acima do ranking geral.
+        if (lembrada != null) opcoes = (listOf(lembrada) + opcoes).distinctBy { it.url }
         tentadas.clear(); semVideo = false
-        fonte = if (herdarFonte && r.serie && preferidaPosicao >= 0)
-            Titulos.preferida(opcoes, preferidaServidor, preferidaPosicao) else 0
+        fonte = if (lembrada != null) 0
+                else if (herdarFonte && r.serie && preferidaPosicao >= 0)
+                    Titulos.preferida(opcoes, preferidaServidor, preferidaPosicao)
+                else 0
         marcas = null
         legendasExt = emptyList()
         legendaExt = null
@@ -416,10 +425,130 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         montarBotoes()
         carregarMarcas()
         carregarLegendas()
+        carregarFontesComplementares(r)
 
         val retomar = if (startTime > 0) startTime * 1000L else if (pedirRetomada) Progresso.posicao(this, r.chave(ep)) else 0L
         tocarFonte(inicio = retomar, pausado = (startTime <= 0 && retomar > 0))
         if (startTime <= 0 && retomar > 0) perguntarRetomada(retomar)
+    }
+
+    private fun chaveFonteLembrada(r: Titulos.Resolvido) = "fonte:" + r.chave(ep)
+
+    private fun fonteLembrada(r: Titulos.Resolvido): Titulos.Opcao? {
+        val prefs = getSharedPreferences("fontes_vod", Context.MODE_PRIVATE)
+        val chave = chaveFonteLembrada(r)
+        val url = prefs.getString("$chave:url", null)?.takeIf { it.startsWith("http") } ?: return null
+        val versaoSalva = prefs.getString("$chave:versao", null).orEmpty().ifBlank { versao }
+        val origem = prefs.getString("$chave:origem", null)?.takeIf { it.isNotBlank() }
+        val qualidade = prefs.getString("$chave:qualidade", null)?.takeIf { it.isNotBlank() }
+        return Titulos.Opcao(versaoSalva, url, origem, qualidade)
+    }
+
+    private fun guardarFonteQueFuncionou() {
+        val r = resolvido ?: return
+        val opcao = opcoes.getOrNull(fonte) ?: return
+        val chave = chaveFonteLembrada(r)
+        getSharedPreferences("fontes_vod", Context.MODE_PRIVATE).edit()
+            .putString("$chave:url", opcao.url)
+            .putString("$chave:versao", opcao.versao)
+            .putString("$chave:origem", opcao.origem.orEmpty())
+            .putString("$chave:qualidade", opcao.qualidade.orEmpty())
+            .apply()
+    }
+
+    /**
+     * Aprende no próprio aparelho quais combinações de provedor/servidor e
+     * qualidade abrem melhor. O histórico não sai do app e só muda a ordem:
+     * as três primeiras são as candidatas rápidas; as demais continuam como
+     * reserva quando nenhuma delas funciona.
+     */
+    private fun chaveDesempenho(opcao: Titulos.Opcao): String {
+        val servidor = opcao.origem?.takeIf { it.isNotBlank() }
+            ?: Titulos.servidor(opcao.url).ifBlank { "desconhecida" }
+        return (servidor.lowercase() + "|" + opcao.qualidade.orEmpty().lowercase())
+            .replace(Regex("""[^a-z0-9.|_-]"""), "_")
+    }
+
+    private fun pontuacao(opcao: Titulos.Opcao): Int {
+        val aprendida = getSharedPreferences("fontes_desempenho", Context.MODE_PRIVATE)
+            .getInt(chaveDesempenho(opcao), 0)
+        val preferenciaAddon = when (opcao.origem) {
+            "FenixFlix" -> 4
+            "BestCine" -> 2
+            else -> 0
+        }
+        return aprendida + preferenciaAddon
+    }
+
+    private fun ordenarPorDesempenho(lista: List<Titulos.Opcao>): List<Titulos.Opcao> =
+        lista.withIndex()
+            .sortedWith(compareByDescending<IndexedValue<Titulos.Opcao>> { pontuacao(it.value) }
+                .thenBy { it.index })
+            .map { it.value }
+
+    private fun ajustarDesempenho(opcao: Titulos.Opcao?, delta: Int) {
+        if (opcao == null) return
+        val prefs = getSharedPreferences("fontes_desempenho", Context.MODE_PRIVATE)
+        val chave = chaveDesempenho(opcao)
+        val atual = prefs.getInt(chave, 0)
+        prefs.edit().putInt(chave, (atual + delta).coerceIn(-20, 20)).apply()
+    }
+
+    /** Consulta addons enquanto o vídeo do catálogo já pode carregar. */
+    private var consultaFontes = 0L
+
+    private fun carregarFontesComplementares(r: Titulos.Resolvido) {
+        val consulta = ++consultaFontes
+        val episodio = ep
+        if (r.tmdbId <= 0 || r.reservado) return
+
+        fun adicionar(extras: Map<String, List<String>>, priorizar: Boolean) {
+            if (consulta != consultaFontes || resolvido?.chave(ep) != r.chave(episodio)) return
+            val atualUrl = opcoes.getOrNull(fonte)?.url
+            val lembradaUrl = fonteLembrada(r)?.url
+            val atuais = opcoes.map { opcao ->
+                opcao.copy(
+                    origem = Resolvedor404.origem(opcao.url) ?: opcao.origem,
+                    qualidade = Resolvedor404.qualidade(opcao.url) ?: opcao.qualidade
+                )
+            }
+            val conhecidas = atuais.map { it.url }.toMutableSet()
+            val novas = Titulos.ordem(extras, versao).filter { conhecidas.add(it.url) }
+            var combinadas = ordenarPorDesempenho(
+                (if (priorizar) novas + atuais else atuais + novas).distinctBy { it.url }
+            )
+            if (lembradaUrl != null) {
+                combinadas.firstOrNull { it.url == lembradaUrl }?.let { preferida ->
+                    combinadas = listOf(preferida) + combinadas.filterNot { it.url == lembradaUrl }
+                }
+            }
+            if (combinadas == opcoes) return
+            val trocarParaFenix = priorizar && novas.isNotEmpty() && !tocou && atualUrl != lembradaUrl
+            opcoes = combinadas
+            fonte = if (trocarParaFenix) {
+                opcoes.indexOfFirst { it.origem == "FenixFlix" }.coerceAtLeast(0)
+            } else {
+                opcoes.indexOfFirst { it.url == atualUrl }.coerceAtLeast(0)
+            }
+            tentadas.clear()
+            if (!trocarParaFenix) tentadas += fonte
+            montarBotoes()
+            if (trocarParaFenix) tocarFonte(player?.currentPosition ?: 0L)
+        }
+
+        lifecycleScope.launch(semDerrubar) {
+            val fenix = Resolvedor404.fontesFenix(
+                r.tmdbId, r.serie, episodio?.temporada ?: 0, episodio?.numero ?: 0
+            )
+            adicionar(fenix, priorizar = true)
+        }
+        lifecycleScope.launch(semDerrubar) {
+            val outras = Resolvedor404.fontes(
+                r.tmdbId, r.serie, episodio?.temporada ?: 0, episodio?.numero ?: 0,
+                incluirFenix = false
+            )
+            adicionar(outras, priorizar = false)
+        }
     }
 
     private fun atualizarTitulos() {
@@ -582,7 +711,10 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                 .build()
         } else {
             DefaultLoadControl.Builder()
-                .setBufferDurationsMs(30_000, 50_000, 2_500, 5_000)
+                // Em TV Box de 2 GB, como a Mi Box 3, 5 s para retomar fazia
+                // fontes HD entrarem no ciclo toca/carrega. Mantém uma reserva
+                // maior antes do início e principalmente após um rebuffer.
+                .setBufferDurationsMs(30_000, 60_000, 5_000, 15_000)
                 .setTargetBufferBytes(96 * 1024 * 1024)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
@@ -612,13 +744,15 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         ultimaTravada = 0L
         confirmarReducao = false
         tentativaDesde = SystemClock.elapsedRealtime()
+        ignorarFalhaAte = tentativaDesde + IGNORAR_EVENTO_ANTERIOR_MS
         mostrarCarregando(if (tentadas.isEmpty()) getString(R.string.player_abrindo)
                           else getString(R.string.player_outro_servidor))
         Telemetria.comecou("vod", nomeTelemetria(), opcao.url, fonte + 1, nova = tentadas.isEmpty())
         selecionarLegendaExt = legendaExt != null
         urlTocando = null
         handler.removeCallbacks(prazo)
-        handler.postDelayed(prazo, PRAZO_MS)
+        handler.postDelayed(prazo, 45_000L)
+        atual.stop()
         resolucao.visibility = View.GONE
         if (!Playback.ehEnderecoDinamico(opcao.url)) {
             iniciarFonte(atual, opcao.url, inicio, pausado)
@@ -641,6 +775,9 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     }
 
     private fun iniciarFonte(atual: ExoPlayer, url: String, inicio: Long, pausado: Boolean) {
+        handler.removeCallbacks(prazo)
+        handler.postDelayed(prazo, PRAZO_MS)
+        ignorarFalhaAte = SystemClock.elapsedRealtime() + IGNORAR_EVENTO_ANTERIOR_MS
         urlTocando = url
         atual.setMediaSource(fonteAtual(url))
         if (inicio > 0) atual.seekTo(inicio)
@@ -664,12 +801,14 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
 
     private fun proximaFonte(posicao: Long) {
         player?.duration?.takeIf { it > 0 }?.let { duracaoAnterior = it }
+        // Chegar aqui significa que a fonte atual falhou, expirou ou terminou vazia.
+        ajustarDesempenho(opcoes.getOrNull(fonte), -2)
         tentadas += fonte
         val proxima = opcoes.indices.firstOrNull { it !in tentadas }
         if (proxima != null) {
             fonte = proxima
             (botoes.findViewWithTag<TextView>("fonte"))?.let { b ->
-                b.text = getString(R.string.player_fonte_n, fonte + 1)
+                b.text = rotuloFonte(fonte)
                 Icones.inicio(b, R.drawable.ic_swap)
             }
             tocarFonte(posicao, pausado = aviso.visibility == View.VISIBLE)
@@ -694,7 +833,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                     opcoes = opcoes + adicionadas.map { Titulos.Opcao(versao, it) }
                     fonte = novaPos
                     (botoes.findViewWithTag<TextView>("fonte"))?.let { b ->
-                        b.text = getString(R.string.player_fonte_n, fonte + 1)
+                        b.text = rotuloFonte(fonte)
                         Icones.inicio(b, R.drawable.ic_swap)
                     }
                     tocarFonte(posicao, pausado = aviso.visibility == View.VISIBLE)
@@ -733,6 +872,9 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
 
         override fun onPlaybackStateChanged(state: Int) {
             val p = player ?: return
+            // O mesmo listener é reutilizado. Ao trocar de mídia, o ExoPlayer
+            // ainda pode entregar o último estado da fonte anterior.
+            if (urlTocando == null || state != p.playbackState) return
             when (state) {
                 Player.STATE_READY -> {
                     handler.removeCallbacks(prazo)
@@ -751,6 +893,8 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                     }
                     if (travadas >= 2 && !reduziu && !Preferencias.economia) reduzirQualidade()
                     if (!tocou) {
+                        guardarFonteQueFuncionou()
+                        ajustarDesempenho(opcoes.getOrNull(fonte), 3)
                         tocou = true
                         Telemetria.tocou("vod", nomeTelemetria(), opcoes.getOrNull(fonte)?.url.orEmpty(),
                             fonte + 1, SystemClock.elapsedRealtime() - tentativaDesde)
@@ -770,6 +914,9 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                     // para o próximo em vez de fechar o player.
                     val duracao = p.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
                     if (p.currentPosition < 30_000 || duracao in 1 until 120_000) {
+                        // Um ENDED atrasado da fonte anterior não pode eliminar
+                        // a fonte nova antes de ela ter a chance de preparar.
+                        if (!tocou && SystemClock.elapsedRealtime() < ignorarFalhaAte) return
                         Telemetria.falhou("vod", nomeTelemetria(), opcoes.getOrNull(fonte)?.url.orEmpty(),
                             fonte + 1, "terminou em ${p.currentPosition / 1000} s")
                         proximaFonte(0)
@@ -796,6 +943,10 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
 
         override fun onPlayerError(error: PlaybackException) {
             val p = player ?: return
+            // setMediaSource pode ser seguido pelo erro enfileirado da mídia
+            // anterior. Ignora-o; se a fonte nova também falhar, o prazo normal
+            // continua ativo e fará a troca depois de uma tentativa real.
+            if (urlTocando == null || (!tocou && SystemClock.elapsedRealtime() < ignorarFalhaAte)) return
             handler.removeCallbacks(prazo)
             // Legenda com defeito não é fonte morta: sai a legenda, o filme
             // continua no mesmo servidor e no mesmo ponto.
@@ -1209,7 +1360,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             botao(Titulos.rotulo(versao), "versao", R.drawable.ic_translate) { painelVersao() }
         }
         if (opcoes.size > 1) {
-            botao(getString(R.string.player_fonte_n, fonte + 1), "fonte", R.drawable.ic_swap) { painelFonte() }
+            botao(rotuloFonte(fonte), "fonte", R.drawable.ic_swap) { painelFonte() }
         }
         botao(getString(R.string.player_audio_legenda), "faixas", R.drawable.ic_subtitles) { painelFaixas() }
         botao(getString(R.string.player_qualidade), "qualidade", R.drawable.ic_hd) { painelQualidade() }
@@ -1361,10 +1512,21 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
      * abre mas está ruim — travando, em baixa qualidade, com áudio fora.
      * A troca continua do mesmo ponto.
      */
+    private fun rotuloFonte(indice: Int): String {
+        val sequencia = getString(R.string.player_fonte_n, indice + 1)
+        val opcao = opcoes.getOrNull(indice)
+        val nome = opcao?.let(Titulos::identificadorFonte)
+        val qualidade = opcao?.qualidade
+        return listOfNotNull(
+            sequencia,
+            nome?.takeIf { it.isNotBlank() },
+            qualidade?.takeIf { it.isNotBlank() }
+        ).joinToString(" • ")
+    }
+
     private fun painelFonte() {
         Painel.mostrar(this, getString(R.string.player_fontes), opcoes.mapIndexed { i, opcao ->
-            // "Fonte N" e a versão; o servidor nunca aparece.
-            Painel.Item(getString(R.string.player_fonte_n, i + 1),
+            Painel.Item(rotuloFonte(i),
                 Titulos.rotulo(opcao.versao),
                 marcado = i == fonte) {
                 if (i == fonte) return@Item

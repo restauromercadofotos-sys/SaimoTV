@@ -28,12 +28,19 @@ object Cartoes {
      * Carrega a capa e só esconde a letra quando a imagem de fato chegou.
      *
      * Logo de canal é PNG transparente: com a letra visível embaixo, ela
-     * aparecia através dele.
+     * aparecia através dele. No LumeFlix o espaço fica neutro durante a carga,
+     * sem a inicial piscando antes da arte.
      */
-    fun carregar(imagem: ImageView, inicial: TextView, url: String?) {
+    fun carregar(
+        imagem: ImageView,
+        inicial: TextView,
+        url: String?,
+        aoCarregar: (() -> Unit)? = null,
+        aoFalhar: (() -> Unit)? = null,
+    ) {
         imagem.dispose()
         imagem.setImageDrawable(null)
-        inicial.visibility = View.VISIBLE
+        inicial.visibility = if (BuildConfig.TV_AO_VIVO) View.VISIBLE else View.INVISIBLE
         if (url.isNullOrEmpty()) {
             imagem.visibility = View.GONE
             return
@@ -42,8 +49,15 @@ object Cartoes {
         imagem.load(url) {
             crossfade(true)
             listener(
-                onSuccess = { _, _ -> inicial.visibility = View.INVISIBLE },
-                onError = { _, _ -> imagem.visibility = View.GONE; inicial.visibility = View.VISIBLE },
+                onSuccess = { _, _ ->
+                    inicial.visibility = View.INVISIBLE
+                    aoCarregar?.invoke()
+                },
+                onError = { _, _ ->
+                    imagem.visibility = View.GONE
+                    inicial.visibility = if (BuildConfig.TV_AO_VIVO) View.VISIBLE else View.INVISIBLE
+                    aoFalhar?.invoke()
+                },
             )
         }
     }
