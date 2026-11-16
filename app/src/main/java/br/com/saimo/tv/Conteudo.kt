@@ -4,7 +4,7 @@ package br.com.saimo.tv
 object Conteudo {
     fun permiteAba(aba: Aba): Boolean = when (aba) {
         Aba.AO_VIVO, Aba.EVENTOS -> BuildConfig.TV_AO_VIVO
-        Aba.ON_DEMAND, Aba.FAVORITOS, Aba.EXTRAS, Aba.BUSCAR -> !BuildConfig.TV_AO_VIVO
+        Aba.ON_DEMAND, Aba.SERIES, Aba.FAVORITOS, Aba.EXTRAS, Aba.BUSCAR -> !BuildConfig.TV_AO_VIVO
         Aba.RADIOS, Aba.APOIE -> false
         else -> true
     }
