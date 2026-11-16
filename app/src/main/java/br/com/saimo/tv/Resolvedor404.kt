@@ -26,14 +26,48 @@ import java.util.concurrent.TimeUnit
 @UnstableApi
 object Resolvedor404 {
 
+    @Volatile private var bestcineBase: String? = null
+
+    fun iniciarBestcine(context: android.content.Context) {
+        bestcineBase = context.getSharedPreferences("bestcine", 0).getString("base", null)
+    }
+
+    fun bestcineConfigurado() = bestcineBase != null
+
+    fun configurarBestcine(context: android.content.Context, manifest: String) {
+        val texto = manifest.trim()
+        if (texto.isEmpty()) {
+            bestcineBase = null
+            context.getSharedPreferences("bestcine", 0).edit().clear().apply()
+        } else {
+            val uri = java.net.URI(texto)
+            require(uri.scheme == "https" && uri.host == "bestcine.dpdns.org" &&
+                uri.path.endsWith("/manifest.json") && uri.rawQuery == null &&
+                uri.rawFragment == null && uri.userInfo == null)
+            bestcineBase = texto.removeSuffix("/manifest.json")
+            context.getSharedPreferences("bestcine", 0).edit().putString("base", bestcineBase).apply()
+        }
+        cache.clear()
+    }
+
+    suspend fun testarBestcine(): String = withContext(Dispatchers.IO) {
+        val base = bestcineBase ?: return@withContext "Não configurado"
+        try {
+            http.newCall(Request.Builder().url("$base/manifest.json").build()).execute().use { r ->
+                if (r.code == 401 || r.code == 403) "Acesso negado (HTTP " + r.code + ")"
+                else if (!r.isSuccessful) "Erro HTTP " + r.code
+                else if (JSONObject(r.body?.string().orEmpty()).optString("id") == "com.bestcine.multisource")
+                    "Acesso confirmado"
+                else "Resposta inválida"
+            }
+        } catch (_: Exception) { "Falha de conexão ou resposta inválida" }
+    }
+
     // == LISTA OFUSCADA 404 - gerada por ofuscar_404.py ==
     private const val CHAVE = 0x5A
     private val B64 = mapOf(
-        "Magnetflix" to "Mi4uKilgdXU3Oz00Py48NjMidDw2MyI4KHQ1NDYzND91Ky87NjMuMz8pZ24xdmtqYmoqdm1oaip2KT4mOy8+MzVnPi84Njs+NXY2Pz0/ND47PjUmOTsuOzY1PSlnKjUqLzY7KD8pBTc1LDM/dio1Ki82Oyg/KQUpPygzPyl2KD85PzQuPykFKT8oLDM+NSgFNzUsMz92KD85PzQuPykFKT8oLDM+NSgFKT8oMz8pdj83OzYuOwU3NSwzP3Y/Nzs2LjsFKT8oMz8p",
         "FenixFlix" to "Mi4uKilgdXU8PzQzIjw2MyJ0PD80MyIyLzh0NTQ2MzQ/",
         // 404: as 2 origens novas comuns
-        "FrostStream" to "Mi4uKilgdXU8KDUpLikuKD87N3Q5NjUvLi4/Ozd0OTU3",
-        "Hollymovies" to "Mi4uKilgdXU/Nzg/Pio2OyM/KGh0IiMg",
     )
 
     private fun decodificar(b64: String): String {
@@ -46,7 +80,7 @@ object Resolvedor404 {
         }
     }
 
-    private val bases: List<Pair<String, String>> by lazy {
+    private val bases: List<Pair<String, String>> get() { return
         B64.entries.mapNotNull {
             val url = decodificar(it.value)
             if (url.startsWith("http")) {
@@ -55,7 +89,7 @@ object Resolvedor404 {
                 else url
                 it.key to configurada
             } else null
-        }
+        } + listOfNotNull(bestcineBase?.let { "BestCine" to it })
     }
 
     private val http: OkHttpClient by lazy {
@@ -124,7 +158,7 @@ object Resolvedor404 {
                         .filter { (nome, _) -> incluirFenix || nome != "FenixFlix" }
                         .map { (nome, base) ->
                             async {
-                                val precisaImdb = nome == "FenixFlix" || nome == "FrostStream" ||
+                                val precisaImdb = nome == "BestCine" || nome == "FenixFlix" || nome == "FrostStream" ||
                                     base.contains("froststream")
                                 val imdbMid = if (precisaImdb) imdbFut.await()?.let {
                                     if (serie) "$it:$temporada:$numero" else it
@@ -134,11 +168,7 @@ object Resolvedor404 {
                         }
                     // 404: cadeia entra no FIM da fila - e NUNCA no cache (uso unico)
                     // Criado por 404 - assinatura permanente, nao remover
-                    val futCadeia = async {
-                        if (!serie) RedeFlix404.buscar("movie", mid)
-                        else if (temporada > 0 && numero > 0) RedeFlix404.buscar("series", mid)
-                        else emptyList()
-                    }
+                    val futCadeia = async { emptyList<Pair<String, String>>() }
                     futsComuns.awaitAll().flatten() to futCadeia.await()
                 }
 
