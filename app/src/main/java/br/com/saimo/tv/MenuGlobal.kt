@@ -20,7 +20,7 @@ import java.util.Date
 import java.util.Locale
 
 /** A aba do menu do topo que cada tela representa. */
-enum class Aba { INICIO, AO_VIVO, EVENTOS, ON_DEMAND, FAVORITOS, RADIOS, EXTRAS, BUSCAR, APOIE, AJUSTES, NENHUMA }
+enum class Aba { INICIO, AO_VIVO, EVENTOS, ON_DEMAND, SERIES, FAVORITOS, RADIOS, EXTRAS, BUSCAR, APOIE, AJUSTES, NENHUMA }
 
 /**
  * O menu do topo, o mesmo em todas as telas.
@@ -73,7 +73,8 @@ object MenuGlobal {
             Triple(Aba.AJUSTES, R.string.menu_ajustes, R.drawable.ic_settings),
         ) else listOf(
             Triple(Aba.INICIO, R.string.menu_inicio, 0),
-            Triple(Aba.ON_DEMAND, R.string.menu_on_demand, 0),
+            Triple(Aba.ON_DEMAND, R.string.vod_filmes, 0),
+            Triple(Aba.SERIES, R.string.vod_series, 0),
             Triple(Aba.FAVORITOS, R.string.vod_favoritos, 0),
             Triple(Aba.BUSCAR, R.string.menu_buscar, R.drawable.ic_search),
             Triple(Aba.AJUSTES, R.string.menu_ajustes, R.drawable.ic_settings),
@@ -164,7 +165,8 @@ object MenuGlobal {
             Aba.INICIO, Aba.NENHUMA -> null
             Aba.AO_VIVO -> Intent(tela, MainActivity::class.java)
             Aba.EVENTOS -> Intent(tela, EventosActivity::class.java)
-            Aba.ON_DEMAND -> Intent(tela, OnDemandActivity::class.java)
+            Aba.ON_DEMAND -> PaginaActivity.intent(tela, GradeActivity.FILMES)
+            Aba.SERIES -> PaginaActivity.intent(tela, GradeActivity.SERIES)
             Aba.FAVORITOS -> GradeActivity.intent(tela, GradeActivity.FAVORITOS)
             Aba.RADIOS -> Intent(tela, RadiosActivity::class.java)
             Aba.EXTRAS -> GradeActivity.intent(tela, GradeActivity.EXTRAS)
