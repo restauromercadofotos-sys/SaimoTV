@@ -40,6 +40,15 @@ class Destaque(
     private val sinopse: TextView,
     private val aoAbrir: (Inicio.Cartao) -> Unit = {},
 ) {
+    private val logoTitulo = ImageView(tela).apply {
+        visibility = View.GONE
+        adjustViewBounds = true
+        scaleType = ImageView.ScaleType.FIT_START
+        val d = tela.resources.displayMetrics.density
+        layoutParams = android.widget.LinearLayout.LayoutParams((260*d).toInt(), (72*d).toInt())
+    }.also { imagem ->
+        (titulo.parent as? android.widget.LinearLayout)?.let { it.addView(imagem, it.indexOfChild(titulo)) }
+    }
     private var trabalho: Job? = null
     private var trailerJob: Job? = null
     private var trailerPlayer: ExoPlayer? = null
@@ -69,6 +78,8 @@ class Destaque(
         trabalho?.cancel()
         trailerJob?.cancel()
         pararTrailer()
+        logoTitulo.visibility = View.GONE
+        titulo.visibility = View.VISIBLE
         titulo.text = tituloPadrao
         meta.text = metaPadrao
         sinopse.text = ""
@@ -86,6 +97,8 @@ class Destaque(
                 iniciarTrailer(trailer)
             }
         }
+        logoTitulo.visibility = View.GONE
+        titulo.visibility = View.VISIBLE
         val alvo = cartao.alvo
         titulo.text = if (alvo != null) Generos.semAno(alvo.titulo) else cartao.titulo
         meta.text = cartao.meta
@@ -105,6 +118,16 @@ class Destaque(
         trabalho = escopo.launch(semDerrubar) {
             delay(400)
             val ficha = Detalhes.de(alvo.titulo, alvo.serie, alvo.tmdbId.takeIf { it > 0 }) ?: return@launch
+            titulo.text = ficha.titulo.ifBlank { Generos.semAno(alvo.titulo) }
+            ficha.logo?.let { url ->
+                logoTitulo.contentDescription = titulo.text
+                logoTitulo.load(url) {
+                    listener(onSuccess = { _, _ ->
+                        logoTitulo.visibility = View.VISIBLE
+                        titulo.visibility = View.GONE
+                    })
+                }
+            }
             val linha = listOfNotNull(
                 ficha.nota.takeIf { it > 0 }?.let { "%.1f".format(it) },
                 ficha.ano.takeIf { it.isNotBlank() },
