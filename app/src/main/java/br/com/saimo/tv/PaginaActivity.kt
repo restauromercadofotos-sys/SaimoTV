@@ -68,7 +68,11 @@ open class PaginaActivity : TelaComMenu() {
     private lateinit var filas: RecyclerView
     private val adaptador by lazy {
         Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) },
-            aoFocar = { destaque.mostrar(it) }, paisagem = true)
+            aoFocar = { cartao ->
+                // Ações de catálogo/"Ver todos" não são filmes; não podem
+                // substituir o destaque por um banner gigante sem imagem.
+                if (cartao.alvo != null || cartao.fundoDe != null) destaque.mostrar(cartao)
+            }, paisagem = true)
     }
     private lateinit var destaque: Destaque
     private lateinit var seletorGeneros: TextView
@@ -158,12 +162,9 @@ open class PaginaActivity : TelaComMenu() {
                     colecao = if (item.daColecao) item.colecao else ""), item.capa, item.trailer)
             })
         }
-        // Numa página de um tipo, o acervo inteiro com filtros (gênero, ano,
-        // idade, nota) logo na segunda fileira, sem precisar descer a página toda.
-        if (!todos) lista.add(minOf(1, lista.size), Inicio.Fila(getString(R.string.pagina_explorar), listOf(
-            Inicio.Cartao(getString(R.string.pagina_todos_az), "", "A–Z") {
-                GradeActivity.abrir(this, tipo)
-            })))
+        // O catálogo completo com filtros já é acessível pelo seletor "Gêneros".
+        // Não se deve criar uma fileira de um cartão sem arte, que ainda
+        // alterava o destaque para "Todos, com filtros" ao receber foco.
         if (!montou) mostrar(lista)
 
         if (todos) montarTodos(lista) else montarTipo(lista)
@@ -176,11 +177,6 @@ open class PaginaActivity : TelaComMenu() {
         val candidatos = withContext(Dispatchers.Default) {
             if (colecao) daColecao(tipo) else doAcervo(serie)
         }
-        val categorias = Generos.todos.sorted().filter { genero ->
-            val bit = Generos.bit(genero)
-            candidatos.any { it.generos and bit != 0 }
-        }
-        generosDaPagina = categorias
         indicePorGenero.clear()
         lancamentos(candidatos)?.let { lista += Inicio.Fila(getString(R.string.pagina_lancamentos), it) }
 
@@ -188,6 +184,9 @@ open class PaginaActivity : TelaComMenu() {
             val generos = Generos.todos.sortedBy { g -> ORDEM_GENEROS.indexOf(g).let { if (it < 0) 99 else it } }
             generos.mapNotNull { g -> porGenero(candidatos, g)?.let { g to it } }
         }
+        // Apenas gêneros com fileiras reais entram no seletor: evita
+        // escolher um gênero e não acontecer nada.
+        generosDaPagina = porGenero.map { it.first }
         for ((g, itens) in porGenero) {
             indicePorGenero[g] = lista.size
             lista += Inicio.Fila(g, itens.map { cartao(it.alvo, it.capa) } + verMais(tipo, g))
@@ -199,11 +198,13 @@ open class PaginaActivity : TelaComMenu() {
      * foco diretamente à fileira, sem trocar de tela nem perder a posição.
      */
     private fun abrirSeletorGeneros() {
-        if (generosDaPagina.isEmpty()) return
         val itens = listOf(Painel.Item("Todos") { focarFileira(0) }) +
             generosDaPagina.map { genero ->
                 Painel.Item(genero) { indicePorGenero[genero]?.let(::focarFileira) }
-            }
+            } +
+            listOf(Painel.Item(getString(R.string.pagina_todos_az)) {
+                GradeActivity.abrir(this, tipo)
+            })
         Painel.mostrar(this, "Gêneros", itens)
     }
 
