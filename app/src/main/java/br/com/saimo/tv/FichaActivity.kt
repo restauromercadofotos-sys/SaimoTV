@@ -21,6 +21,7 @@ import coil3.transform.CircleCropTransformation
 import coil3.request.crossfade
 import coil3.request.transformations
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
 
 /**
  * O que abrir: um título do acervo, com o bastante para chegar até ele.
@@ -88,7 +89,7 @@ class FichaActivity : TelaComMenu() {
     private lateinit var assistirBotao: TextView
     private var resolvido: Titulos.Resolvido? = null
     private var temporadaVista = 0
-    private val episodios = EpisodiosAdapter { ep -> tocarEpisodio(ep) }
+    private val episodios by lazy { EpisodiosAdapter(lifecycleScope) { ep -> tocarEpisodio(ep) } }
     private val parecidos by lazy {
         CapasAdapter(largura = (resources.displayMetrics.density * 140).toInt()) { achado ->
             abrir(this, Alvo(achado.titulo, achado.serie, achado.letra, achado.ano))
@@ -203,6 +204,7 @@ class FichaActivity : TelaComMenu() {
             val r = Titulos.resolver(this@FichaActivity, alvo) ?: return@launch
             if (isFinishing || isDestroyed) return@launch
             resolvido = r
+            episodios.tmdbId = r.tmdbId
             atualizarAssistir()
             val versoes = r.filme?.fontes?.keys ?: r.episodios.flatMap { it.versoes }.toSet()
             if (versoes.size > 1) {
@@ -294,7 +296,7 @@ class FichaActivity : TelaComMenu() {
         findViewById<RecyclerView>(R.id.fichaEpisodios).scrollToPosition(indice)
         lifecycleScope.launch(semDerrubar) {
             val info = Detalhes.temporada(r.tmdbId, temporada).associateBy { it.numero }
-            if (temporadaVista == temporada) episodios.trocar(r, lista, info)
+            if (temporadaVista == temporada) episodios.completar(info)
         }
     }
 
@@ -338,6 +340,15 @@ class FichaActivity : TelaComMenu() {
                     }.getOrNull()
                 }
             val ficha = Detalhes.de(alvo.titulo, alvo.serie, id)
+            if (alvo.serie) {
+                // O TMDB nem sempre possui still_path para cada episódio.
+                // Mesmo sem detalhes, mostra arte da série em vez de números.
+                episodios.atualizarReserva(
+                    ficha?.fundo?.replace("/w780/", "/w300/")
+                        ?: ficha?.capa
+                        ?: Generos.capa(alvo.nomeCompleto, true)
+                )
+            }
             carregando.visibility = View.GONE
             if (isFinishing || isDestroyed) return@launch
             if (ficha == null || ficha.vazia) {
@@ -541,20 +552,41 @@ private class ElencoAdapter(
     override fun getItemCount() = pessoas.size
 }
 
-/** Os episódios da temporada, em cartões com a imagem da cena. */
+/** Episódios com miniaturas do TMDB e fallback visual para temporadas sem stills. */
 @androidx.media3.common.util.UnstableApi
 private class EpisodiosAdapter(
+    private val escopo: CoroutineScope,
     private val aoEscolher: (Titulos.Ep) -> Unit,
 ) : RecyclerView.Adapter<EpisodiosAdapter.Holder>() {
 
     private var r: Titulos.Resolvido? = null
+    var tmdbId: Int = 0
     var acima: Int = View.NO_ID
     private var itens: List<Titulos.Ep> = emptyList()
     private var info: Map<Int, Detalhes.EpisodioTmdb> = emptyMap()
+    private var temporadaRespondida = false
+    private var reserva: String? = null
+    private val miniaturasExtras = mutableMapOf<Pair<Int, Int>, String>()
+    private val consultasIniciadas = mutableSetOf<Pair<Int, Int>>()
+
+    fun atualizarReserva(url: String?) {
+        if (url.isNullOrBlank() || url == reserva) return
+        reserva = url
+        if (itemCount > 0) notifyItemRangeChanged(0, itemCount)
+    }
 
     fun trocar(resolvido: Titulos.Resolvido, lista: List<Titulos.Ep>, dados: Map<Int, Detalhes.EpisodioTmdb>) {
-        r = resolvido; itens = lista; info = dados
+        r = resolvido
+        itens = lista
+        info = dados
+        temporadaRespondida = false
         notifyDataSetChanged()
+    }
+
+    fun completar(dados: Map<Int, Detalhes.EpisodioTmdb>) {
+        info = dados
+        temporadaRespondida = true
+        if (itemCount > 0) notifyItemRangeChanged(0, itemCount)
     }
 
     class Holder(view: View) : RecyclerView.ViewHolder(view) {
@@ -564,6 +596,7 @@ private class EpisodiosAdapter(
         val progresso: ProgressBar = view.findViewById(R.id.epProgresso)
         val titulo: TextView = view.findViewById(R.id.epTitulo)
         val detalhe: TextView = view.findViewById(R.id.epDetalhe)
+        var chave: Pair<Int, Int>? = null
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -575,6 +608,8 @@ private class EpisodiosAdapter(
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val ep = itens[position]
+        val chave = ep.temporada to ep.numero
+        holder.chave = chave
         val dados = info[ep.numero]
         val contexto = holder.itemView.context
         holder.numero.text = ep.numero.toString()
@@ -587,24 +622,62 @@ private class EpisodiosAdapter(
         holder.visto.visibility = if (fracao != null && fracao >= 1f) View.VISIBLE else View.GONE
         holder.progresso.visibility = if (fracao != null && fracao < 1f) View.VISIBLE else View.GONE
         fracao?.let { holder.progresso.progress = (it * 1000).toInt() }
-        holder.imagem.dispose()
-        holder.imagem.setImageDrawable(null)
-        if (dados?.imagem != null) {
-            holder.numero.visibility = View.INVISIBLE
-            holder.imagem.visibility = View.VISIBLE
-            holder.imagem.load(dados.imagem) {
-                crossfade(150)
-                listener(onError = { _, _ ->
-                    holder.imagem.visibility = View.GONE
-                    holder.numero.visibility = View.VISIBLE
-                })
+
+        val imagem = dados?.imagem ?: miniaturasExtras[chave] ?: reserva
+        exibirImagem(holder, chave, imagem, reserva.takeIf { it != imagem })
+
+        // Só investiga /images para episódios VISÍVEIS e depois de receber
+        // a temporada. Nunca baixa dezenas de imagens ao entrar na ficha.
+        if (temporadaRespondida && dados?.imagem == null && tmdbId > 0 &&
+            consultasIniciadas.add(chave)) {
+            val idConsultado = tmdbId
+            escopo.launch(semDerrubar) {
+                val encontrada = Detalhes.imagemEpisodio(idConsultado, chave.first, chave.second)
+                if (encontrada != null && tmdbId == idConsultado) {
+                    miniaturasExtras[chave] = encontrada
+                    val pos = itens.indexOfFirst { it.temporada == chave.first && it.numero == chave.second }
+                    if (pos >= 0) notifyItemChanged(pos)
+                }
             }
-        } else {
-            holder.imagem.visibility = View.GONE
-            holder.numero.visibility = View.VISIBLE
         }
         holder.itemView.setOnClickListener { aoEscolher(ep) }
         holder.itemView.nextFocusUpId = acima
+    }
+
+    private fun exibirImagem(holder: Holder, chave: Pair<Int, Int>, url: String?, alternativa: String?) {
+        holder.imagem.dispose()
+        holder.imagem.setImageDrawable(null)
+        if (url.isNullOrBlank()) {
+            holder.imagem.visibility = View.GONE
+            holder.numero.visibility = View.VISIBLE
+            return
+        }
+        holder.imagem.visibility = View.VISIBLE
+        holder.numero.visibility = View.INVISIBLE
+        fun carregar(endereco: String, permitirReserva: Boolean) {
+            holder.imagem.load(endereco) {
+                crossfade(150)
+                listener(
+                    onError = { _, _ ->
+                        if (holder.chave != chave) return@listener
+                        if (permitirReserva && !alternativa.isNullOrBlank()) {
+                            carregar(alternativa, false)
+                        } else {
+                            holder.imagem.visibility = View.GONE
+                            holder.numero.visibility = View.VISIBLE
+                        }
+                    }
+                )
+            }
+        }
+        carregar(url, true)
+    }
+
+    override fun onViewRecycled(holder: Holder) {
+        holder.imagem.dispose()
+        holder.imagem.setImageDrawable(null)
+        holder.chave = null
+        super.onViewRecycled(holder)
     }
 
     override fun getItemCount() = itens.size
