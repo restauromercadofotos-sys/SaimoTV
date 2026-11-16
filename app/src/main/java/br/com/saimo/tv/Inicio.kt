@@ -307,7 +307,7 @@ object Inicio {
          * gerando a piscada amarela ao navegar entre as categorias.
          */
         private fun manterFocoNoCatalogo(vertical: RecyclerView) {
-            if (BuildConfig.TV_AO_VIVO || vertical.hasFocus()) return
+            if (BuildConfig.TV_AO_VIVO || vertical.isFocused) return
             vertical.isFocusable = true
             val anterior = vertical.descendantFocusability
             vertical.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
