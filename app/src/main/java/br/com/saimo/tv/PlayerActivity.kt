@@ -478,9 +478,11 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     private fun pontuacao(opcao: Titulos.Opcao): Int {
         val aprendida = getSharedPreferences("fontes_desempenho", Context.MODE_PRIVATE)
             .getInt(chaveDesempenho(opcao), 0)
+        // BestCine tem sido o provedor mais consistente para filmes neste
+        // aparelho; é só um impulso inicial. O histórico local de sucesso/erro
+        // continua acumulando e pode mudar a ordem conforme o uso real.
         val preferenciaAddon = when (opcao.origem) {
-            "FenixFlix" -> 4
-            "BestCine" -> 2
+            "BestCine" -> if (resolvido?.serie == false) 6 else 2
             else -> 0
         }
         return aprendida + preferenciaAddon
