@@ -531,17 +531,21 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                 }
             }
             if (combinadas == opcoes) return
-            val trocarParaFenix = priorizar && novas.isNotEmpty() && !tocou && atualUrl != lembradaUrl
+            val fonteAtual = opcoes.getOrNull(fonte)
+            val melhor = combinadas.firstOrNull()
+            val trocarParaMelhor = !tocou && atualUrl != lembradaUrl &&
+                melhor != null && melhor.url != atualUrl &&
+                pontuacao(melhor) > (fonteAtual?.let(::pontuacao) ?: Int.MIN_VALUE)
             opcoes = combinadas
-            fonte = if (trocarParaFenix) {
-                opcoes.indexOfFirst { it.origem == "FenixFlix" }.coerceAtLeast(0)
+            fonte = if (trocarParaMelhor) {
+                opcoes.indexOfFirst { it.url == melhor?.url }.coerceAtLeast(0)
             } else {
                 opcoes.indexOfFirst { it.url == atualUrl }.coerceAtLeast(0)
             }
             tentadas.clear()
-            if (!trocarParaFenix) tentadas += fonte
+            if (!trocarParaMelhor) tentadas += fonte
             montarBotoes()
-            if (trocarParaFenix) tocarFonte(player?.currentPosition ?: 0L)
+            if (trocarParaMelhor) tocarFonte(player?.currentPosition ?: 0L)
         }
 
         lifecycleScope.launch(semDerrubar) {
