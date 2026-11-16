@@ -105,8 +105,11 @@ object Resolvedor404 {
     private val imdbCache = ConcurrentHashMap<String, String>()
     /** URL final -> addon que a entregou, preservado para a interface do player. */
     private val origens = ConcurrentHashMap<String, String>()
+    /** URL final -> qualidade anunciada pelo addon (ex.: 1080p, 720p, 4K). */
+    private val qualidades = ConcurrentHashMap<String, String>()
 
     fun origem(url: String): String? = origens[url]
+    fun qualidade(url: String): String? = qualidades[url]
     private const val TTL_MS = 5 * 60 * 1000L
     private const val TMDB_KEY = "15d2ea6d0dc1d476efbca3eba2b9bbfb"
 
@@ -259,6 +262,7 @@ object Resolvedor404 {
                 for (i in 0 until streams.length()) {
                     val s = streams.optJSONObject(i) ?: continue
                     val url = s.optString("url").takeIf { it.isNotEmpty() } ?: continue
+                    extrairQualidade(s)?.let { qualidades[url] = it }
                     saida.add(classificar(s) to url)
                 }
                 saida
@@ -323,6 +327,21 @@ object Resolvedor404 {
             }
         }
     } catch (e: Exception) { null }
+
+    /** Qualidade anunciada no nome, título ou descrição do stream Stremio. */
+    private fun extrairQualidade(s: JSONObject): String? {
+        val texto = listOf(s.optString("name"), s.optString("title"), s.optString("description"))
+            .joinToString(" ")
+        Regex("""(?i)(?<!\d)(2160|1440|1080|720|576|480|360)\s*p?(?!\d)""")
+            .find(texto)?.groupValues?.get(1)?.let { return "${it}p" }
+        return when {
+            Regex("""(?i)\b(4k|uhd)\b""").containsMatchIn(texto) -> "4K"
+            Regex("""(?i)\b(fhd|full\s*hd)\b""").containsMatchIn(texto) -> "1080p"
+            Regex("""(?i)\bhd\b""").containsMatchIn(texto) -> "720p"
+            Regex("""(?i)\bsd\b""").containsMatchIn(texto) -> "480p"
+            else -> null
+        }
+    }
 
     /** Dublado/Legendado deduzido do nome e do detalhe do stream. */
     private fun classificar(s: JSONObject): String {
