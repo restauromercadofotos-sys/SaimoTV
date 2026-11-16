@@ -15,6 +15,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil3.load
+import coil3.dispose
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -78,6 +79,7 @@ class Destaque(
         trabalho?.cancel()
         trailerJob?.cancel()
         pararTrailer()
+        logoTitulo.dispose()
         logoTitulo.visibility = View.GONE
         titulo.visibility = View.VISIBLE
         titulo.text = tituloPadrao
@@ -97,6 +99,7 @@ class Destaque(
                 iniciarTrailer(trailer)
             }
         }
+        logoTitulo.dispose()
         logoTitulo.visibility = View.GONE
         titulo.visibility = View.VISIBLE
         val alvo = cartao.alvo
