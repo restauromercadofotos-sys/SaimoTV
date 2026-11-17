@@ -348,7 +348,7 @@ object Inicio {
             holder.logo?.setImageDrawable(null)
             holder.logo?.visibility = View.INVISIBLE
             holder.nome.visibility =
-                if (!BuildConfig.TV_AO_VIVO && tipo == Tipo.PAISAGEM) View.INVISIBLE else View.VISIBLE
+                if (!BuildConfig.TV_AO_VIVO && tipo == Tipo.PAISAGEM && cartao.alvo != null && escopo != null && holder.logo != null) View.INVISIBLE else View.VISIBLE
             holder.itemView.contentDescription = cartao.titulo
             holder.itemView.animate().cancel()
             val escala = if (!BuildConfig.TV_AO_VIVO && holder.itemView.hasFocus()) 1.025f else 1f
@@ -383,15 +383,19 @@ object Inicio {
                     holder.arteJob = escopo?.launch(semDerrubar) {
                         val ficha = pedidosDeArte.withPermit {
                             Detalhes.de(alvo.titulo, alvo.serie, alvo.tmdbId.takeIf { it > 0 })
-                        } ?: return@launch
+                        }
                         if (holder.cartao !== cartao) return@launch
+                        if (ficha?.logo.isNullOrBlank()) holder.nome.visibility = View.VISIBLE
+                        if (ficha == null || holder.cartao !== cartao) return@launch
                         ficha.fundo?.let { url ->
                             cartao.capaLarga = url
                             carregarPaisagem(holder, cartao, url)
                         }
                         ficha.logo?.let { url ->
                             holder.logo?.load(url) {
-                                listener(onSuccess = { _, _ ->
+                                listener(onError = { _, _ ->
+                                    if (holder.cartao === cartao) holder.nome.visibility = View.VISIBLE
+                                }, onSuccess = { _, _ ->
                                     if (holder.cartao === cartao) {
                                         holder.logo?.visibility = View.VISIBLE
                                         holder.nome.visibility = View.GONE
@@ -437,12 +441,7 @@ object Inicio {
         }
 
         private fun carregarPaisagem(holder: Holder, cartao: Cartao, url: String) {
-            val revelarTitulo = {
-                if (holder.cartao === cartao && holder.logo?.visibility != View.VISIBLE) {
-                    holder.nome.visibility = View.VISIBLE
-                }
-            }
-            Cartoes.carregar(holder.imagem, holder.inicial, url, revelarTitulo, revelarTitulo)
+            if (holder.cartao === cartao) Cartoes.carregar(holder.imagem, holder.inicial, url)
         }
 
         /** Cartão de jogo: escudos (colagem = casa, fora, campeonato) e o selo. */
