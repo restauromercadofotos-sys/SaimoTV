@@ -101,8 +101,8 @@ class Destaque(
         }
         logoTitulo.dispose()
         logoTitulo.visibility = View.GONE
-        titulo.visibility = View.VISIBLE
         val alvo = cartao.alvo
+        titulo.visibility = if (alvo == null) View.VISIBLE else View.INVISIBLE
         titulo.text = if (alvo != null) Generos.semAno(alvo.titulo) else cartao.titulo
         meta.text = cartao.meta
             ?: cartao.subtitulo?.let { tela.getString(R.string.inicio_canal_agora, it) }
@@ -119,7 +119,7 @@ class Destaque(
             return
         }
         trabalho = escopo.launch(semDerrubar) {
-            delay(400)
+            delay(120)
             val ficha = Detalhes.de(alvo.titulo, alvo.serie, alvo.tmdbId.takeIf { it > 0 })
             if (ficha == null) {
                 titulo.visibility = View.VISIBLE
@@ -131,6 +131,7 @@ class Destaque(
                 titulo.visibility = View.VISIBLE
             } else {
                 logoTitulo.contentDescription = titulo.text
+                titulo.visibility = View.GONE
                 logoTitulo.visibility = View.INVISIBLE
                 logoTitulo.load(urlLogo) {
                     listener(
