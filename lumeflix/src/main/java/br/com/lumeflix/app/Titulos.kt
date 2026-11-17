@@ -62,14 +62,15 @@ object Titulos {
     }
 
     suspend fun resolver(context: Context, alvo: Alvo): Resolvido? {
-        Generos.carregar(context)
         if (alvo.colecao.isNotEmpty()) {
             val achado = Vod.colecao(context, alvo.colecao)
                 .firstOrNull { it.titulo.equals(alvo.titulo, ignoreCase = true) } ?: return null
-            val tmdb = alvo.tmdbId.takeIf { it > 0 } ?: achado.tmdbId.toIntOrNull() ?: 0
+            val tmdb = alvo.tmdbId.takeIf { it > 0 } ?: achado.tmdbId.toIntOrNull()?.takeIf { it > 0 }
+                ?: Detalhes.buscarId(achado.titulo, true, achado.ano) ?: 0
             return Resolvido(alvo, Serie(achado.titulo, achado.ano, -1, 0).nomeCompleto, null,
-                agrupar(achado.episodios), tmdb)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { agrupar(achado.episodios) }, tmdb)
         }
+        Generos.carregar(context)
         val achado = Vod.Achado(alvo.titulo, alvo.serie, alvo.letra, alvo.ano)
         var tmdb = alvo.tmdbId.takeIf { it > 0 } ?: Generos.id(alvo.nomeCompleto, alvo.serie)
             ?: Generos.id(alvo.titulo, alvo.serie) ?: 0
@@ -94,15 +95,7 @@ object Titulos {
                         }
                     }
                     val todosEps = mapa.values.sortedWith(compareBy({ it.temporada }, { it.numero }))
-                    val primeiro = todosEps.firstOrNull()
-                    val listaComPrimeiro = if (primeiro != null && primeiro.fontes.isEmpty()) {
-                        val extras = Resolvedor404.fontes(tmdb, serie = true, temporada = primeiro.temporada, numero = primeiro.numero)
-                        if (extras.isNotEmpty()) {
-                            todosEps.map { if (it.temporada == primeiro.temporada && it.numero == primeiro.numero) Ep(it.temporada, it.numero, extras) else it }
-                        } else todosEps
-                    } else todosEps
-
-                    return Resolvido(alvo, nome, null, listaComPrimeiro, tmdb)
+                    return Resolvido(alvo, nome, null, todosEps, tmdb)
                 }
             }
 
