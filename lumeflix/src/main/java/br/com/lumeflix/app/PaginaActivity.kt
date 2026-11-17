@@ -68,12 +68,18 @@ open class PaginaActivity : TelaComMenu() {
     private lateinit var filas: RecyclerView
     private val adaptador by lazy {
         Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) },
-            aoFocar = { destaque.mostrar(it) }, paisagem = true)
+            aoFocar = { cartao ->
+                // Ações de catálogo/"Ver todos" não são filmes; não podem
+                // substituir o destaque por um banner gigante sem imagem.
+                if (cartao.alvo != null || cartao.fundoDe != null) destaque.mostrar(cartao)
+            }, paisagem = true)
     }
     private lateinit var destaque: Destaque
+    private lateinit var seletorGeneros: TextView
     private var montou = false
-    private var generoSelecionado: String? = null
-    private var generosDisponiveis: List<String> = emptyList()
+    /** Posição de cada fileira para o seletor de gêneros saltar sem outra tela. */
+    private val indicePorGenero = linkedMapOf<String, Int>()
+    private var generosDaPagina: List<String> = emptyList()
     /// Os cartões das categorias do topo; o "Explorar" do fim usa o mesmo desenho.
     private var categoriasProntas: Inicio.Fila? = null
 
@@ -97,18 +103,13 @@ open class PaginaActivity : TelaComMenu() {
             GradeActivity.DORAMAS -> R.string.vod_doramas
             else -> R.string.vod_filmes
         })
-        // O menu do topo já diz em que página se está.
         findViewById<TextView>(R.id.paginaNome).apply {
-            text = "$nome   ·   Gêneros ▾"
-            isFocusable = true
-            setBackgroundResource(R.drawable.botao_ficha)
-            setOnClickListener {
-                Painel.mostrar(this@PaginaActivity, "Gêneros", listOf(
-                    Painel.Item("Todos") { selecionarGenero(null, nome) }
-                ) + generosDisponiveis.map { g ->
-                    Painel.Item(g) { selecionarGenero(g, nome) }
-                })
-            }
+            text = nome
+            visibility = android.view.View.VISIBLE
+        }
+        seletorGeneros = findViewById<TextView>(R.id.paginaGeneros).apply {
+            visibility = if (todos) android.view.View.GONE else android.view.View.VISIBLE
+            setOnClickListener { abrirSeletorGeneros() }
         }
         destaque.padrao(nome, getString(R.string.vod_carregando))
         lifecycleScope.launch(semDerrubar) { montar() }
@@ -161,8 +162,10 @@ open class PaginaActivity : TelaComMenu() {
                     colecao = if (item.daColecao) item.colecao else ""), item.capa, item.trailer)
             })
         }
-        // Numa página de um tipo, o acervo inteiro com filtros (gênero, ano,
-        // idade, nota) logo na segunda fileira, sem precisar descer a página toda.
+        // O catálogo completo com filtros já é acessível pelo seletor "Gêneros".
+        // Não se deve criar uma fileira de um cartão sem arte, que ainda
+        // alterava o destaque para "Todos, com filtros" ao receber foco.
+        if (!montou) mostrar(lista)
 
         if (todos) montarTodos(lista) else montarTipo(lista)
         mostrar(lista)
@@ -174,31 +177,52 @@ open class PaginaActivity : TelaComMenu() {
         val candidatos = withContext(Dispatchers.Default) {
             if (colecao) daColecao(tipo) else doAcervo(serie)
         }
-        val categorias = Generos.todos.sorted().filter { genero ->
-            val bit = Generos.bit(genero)
-            candidatos.any { it.generos and bit != 0 }
-        }
-        generosDisponiveis = categorias
+        indicePorGenero.clear()
         lancamentos(candidatos)?.let { lista += Inicio.Fila(getString(R.string.pagina_lancamentos), it) }
 
         val porGenero = withContext(Dispatchers.Default) {
             val generos = Generos.todos.sortedBy { g -> ORDEM_GENEROS.indexOf(g).let { if (it < 0) 99 else it } }
             generos.mapNotNull { g -> porGenero(candidatos, g)?.let { g to it } }
         }
+        // Apenas gêneros com fileiras reais entram no seletor: evita
+        // escolher um gênero e não acontecer nada.
+        generosDaPagina = porGenero.map { it.first }
         for ((g, itens) in porGenero) {
+            indicePorGenero[g] = lista.size
             lista += Inicio.Fila(g, object : AbstractList<Inicio.Cartao>() {
                 override val size get() = itens.size
-                override fun get(index: Int): Inicio.Cartao = itens[index].let { cartao(it.alvo, it.capa) }
+                override fun get(index: Int) = itens[index].let { cartao(it.alvo, it.capa) }
             })
         }
-        generoSelecionado?.let { genero -> lista.removeAll { it.titulo != genero } }
     }
 
-    private fun selecionarGenero(genero: String?, nome: String) {
-        generoSelecionado = genero
-        findViewById<TextView>(R.id.paginaNome).text = "$nome   ·   ${genero ?: "Gêneros"} ▾"
-        montou = false
-        lifecycleScope.launch(semDerrubar) { montar() }
+    /**
+     * Seletor no padrão de TV: abre com OK, escolhe com o direcional e leva o
+     * foco diretamente à fileira, sem trocar de tela nem perder a posição.
+     */
+    private fun abrirSeletorGeneros() {
+        val itens = listOf(Painel.Item("Todos") { focarFileira(0) }) +
+            generosDaPagina.map { genero ->
+                Painel.Item(genero) { indicePorGenero[genero]?.let(::focarFileira) }
+            } +
+            listOf(Painel.Item(getString(R.string.pagina_todos_az)) {
+                GradeActivity.abrir(this, tipo)
+            })
+        Painel.mostrar(this, "Gêneros", itens)
+    }
+
+    private fun focarFileira(posicao: Int) {
+        if (posicao !in 0 until (filas.adapter?.itemCount ?: 0)) return
+        filas.scrollToPosition(posicao)
+        fun tentar(restantes: Int) {
+            val linha = filas.findViewHolderForAdapterPosition(posicao)?.itemView
+            val horizontal = linha?.findViewById<RecyclerView>(R.id.filaCapas)
+            val primeiro = horizontal?.findViewHolderForAdapterPosition(0)?.itemView
+            if (primeiro?.requestFocus() == true || restantes <= 0) return
+            horizontal?.scrollToPosition(0)
+            filas.postDelayed({ tentar(restantes - 1) }, 45)
+        }
+        filas.post { tentar(8) }
     }
 
     /**
@@ -291,15 +315,18 @@ open class PaginaActivity : TelaComMenu() {
 
     private fun mostrar(lista: List<Inicio.Fila>) {
         if (isFinishing || isDestroyed) return
-        adaptador.trocar(lista.toList())
-        lista.firstOrNull()?.cartoes?.firstOrNull { it.alvo != null }?.let { destaque.mostrar(it) }
+        adaptador.trocar(lista.mapIndexed { index, fila ->
+            if (index in indicePorGenero.values) return@mapIndexed fila
+            fila.copy(cartoes = fila.cartoes.distinctBy { cartao ->
+                val alvo = cartao.alvo
+                val id = alvo?.tmdbId?.takeIf { it > 0 }
+                    ?: alvo?.let { Generos.id(it.titulo, it.serie) }
+                if (id != null) "${alvo?.serie}|tmdb:$id"
+                else "${alvo?.serie}|${Generos.semAno(cartao.titulo).trim().lowercase(Locale.ROOT)}|${alvo?.ano.orEmpty()}"
+            })
+        })
         if (!montou) {
             montou = true
-            if (intent.getBooleanExtra("menu.manterFoco", false)) {
-                intent.removeExtra("menu.manterFoco")
-                MenuGlobal.focar(barraMenu, if (serie) Aba.SERIES else Aba.ON_DEMAND)
-                return
-            }
             focarQuandoPronto {
                 filas.findViewHolderForAdapterPosition(0)?.itemView
                     ?.findViewById<RecyclerView>(R.id.filaCapas)?.getChildAt(0)
@@ -316,8 +343,13 @@ open class PaginaActivity : TelaComMenu() {
 
     private fun porGenero(candidatos: List<Candidato>, genero: String): List<Candidato>? {
         val bit = Generos.bit(genero)
-        return candidatos.filter { it.generos and bit != 0 }
+        return candidatos.asSequence()
+            .filter { it.generos and bit != 0 }
             .sortedByDescending { it.ano }
+            // Uma fileira longa parece contínua no controle, sem manter dezenas
+            // de milhares de cartões duplicados em memória em cada gênero.
+            // O RecyclerView cria imagens apenas para a janela visível.
+            .distinctBy { it.alvo.tmdbId.takeIf { id -> id > 0 } ?: Generos.id(it.alvo.titulo, it.alvo.serie) ?: Pair(Generos.semAno(it.alvo.titulo).lowercase(Locale.ROOT), it.ano) }.toList()
             .takeIf { it.size >= 6 }
     }
 

@@ -186,6 +186,7 @@ object Progresso {
             val posicao = valor as? Long ?: continue
             val duracao = tudo["$chave|d"] as? Long ?: continue
             if (posicao <= 0 || duracao < 0) continue
+            if (tudo["v|$chave"] == true || (duracao > SOBRA_MS && posicao > duracao - SOBRA_MS)) continue
             val campos = chave.split("|")
             val serie = campos.firstOrNull() == "s"
             val nome = campos.getOrNull(1) ?: continue

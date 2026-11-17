@@ -171,6 +171,9 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     /** Alguma fonte deste título respondeu que o vídeo não existe ainda. */
     private var semVideo = false
     private var marcas: Pulos.Marcas? = null
+    /** Desfaz resultados atrasados de outro episódio, inclusive ao trocar fonte. */
+    private var consultaDeMarcas = 0
+    private var fimTratado = false
     /// Legendas do OpenSubtitles: as do título, a escolhida (com o arquivo já
     /// baixado) e o atraso dela. Trocar de fonte não as perde.
     private var legendasExt: List<Legendas.Opcao> = emptyList()
@@ -425,6 +428,9 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                     Titulos.preferida(opcoes, preferidaServidor, preferidaPosicao)
                 else 0
         marcas = null
+        consultaDeMarcas++
+        fimTratado = false
+        handler.removeCallbacks(contar)
         legendasExt = emptyList()
         legendaExt = null
         legendaExtSrt = null
@@ -487,9 +493,11 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     private fun pontuacao(opcao: Titulos.Opcao): Int {
         val aprendida = getSharedPreferences("fontes_desempenho", Context.MODE_PRIVATE)
             .getInt(chaveDesempenho(opcao), 0)
+        // BestCine tem sido o provedor mais consistente para filmes neste
+        // aparelho; é só um impulso inicial. O histórico local de sucesso/erro
+        // continua acumulando e pode mudar a ordem conforme o uso real.
         val preferenciaAddon = when (opcao.origem) {
-            "FenixFlix" -> 4
-            "BestCine" -> 2
+            "BestCine" -> if (resolvido?.serie == false) 6 else 2
             else -> 0
         }
         return aprendida + preferenciaAddon
@@ -538,17 +546,21 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                 }
             }
             if (combinadas == opcoes) return
-            val trocarParaFenix = priorizar && novas.isNotEmpty() && !tocou && atualUrl != lembradaUrl
+            val fonteAtual = opcoes.getOrNull(fonte)
+            val melhor = combinadas.firstOrNull()
+            val trocarParaMelhor = !tocou && atualUrl != lembradaUrl &&
+                melhor != null && melhor.url != atualUrl &&
+                pontuacao(melhor) > (fonteAtual?.let(::pontuacao) ?: Int.MIN_VALUE)
             opcoes = combinadas
-            fonte = if (trocarParaFenix) {
-                opcoes.indexOfFirst { it.origem == "FenixFlix" }.coerceAtLeast(0)
+            fonte = if (trocarParaMelhor) {
+                opcoes.indexOfFirst { it.url == melhor?.url }.coerceAtLeast(0)
             } else {
                 opcoes.indexOfFirst { it.url == atualUrl }.coerceAtLeast(0)
             }
             tentadas.clear()
-            if (!trocarParaFenix) tentadas += fonte
+            if (!trocarParaMelhor) tentadas += fonte
             montarBotoes()
-            if (trocarParaFenix) tocarFonte(player?.currentPosition ?: 0L)
+            if (trocarParaMelhor) tocarFonte(player?.currentPosition ?: 0L)
         }
 
         lifecycleScope.launch(semDerrubar) {
@@ -581,13 +593,18 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     private fun carregarMarcas() {
         val r = resolvido ?: return
         val episodio = ep
+        val consulta = ++consultaDeMarcas
         lifecycleScope.launch(semDerrubar) {
+            // Metadados do TMDB e marcações são independentes: falhar um não
+            // deve bloquear o outro nem atrasar a abertura.
             if (r.tmdbId > 0 && episodio != null && infoEpisodios.isEmpty()) {
                 infoEpisodios = Detalhes.temporada(r.tmdbId, episodio.temporada).associateBy { it.numero }
-                atualizarTitulos()
+                if (consulta == consultaDeMarcas) atualizarTitulos()
             }
+        }
+        lifecycleScope.launch(semDerrubar) {
             val achadas = Pulos.de(r.tmdbId, episodio?.temporada ?: 0, episodio?.numero ?: 0)
-            if (episodio == ep) marcas = achadas
+            if (consulta == consultaDeMarcas && episodio == ep) marcas = achadas
         }
     }
 
@@ -935,7 +952,8 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                         Telemetria.falhou("vod", nomeTelemetria(), opcoes.getOrNull(fonte)?.url.orEmpty(),
                             fonte + 1, "terminou em ${p.currentPosition / 1000} s")
                         proximaFonte(0)
-                    } else {
+                    } else if (!fimTratado) {
+                        fimTratado = true
                         terminou()
                     }
                 }
@@ -1082,11 +1100,13 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         val r = resolvido ?: return
         val atual = ep ?: return
         val seguinte = r.seguinte(atual) ?: return
-        // O cartão sobe quando os créditos começam; sem marca no TheIntroDB,
-        // quarenta segundos antes do fim.
-        val creditos = marcas?.creditos?.takeIf { it > duracao / 2 } ?: (duracao - 40_000)
-        if (posicao >= creditos && !proximoDispensado && proximo.visibility != View.VISIBLE) {
-            mostrarProximo(seguinte)
+        // Quando há marca confiável dos créditos, a contagem de 10s pode
+        // iniciar nesse ponto. Sem marcação, mostramos apenas o cartão próximo
+        // do final; o avanço automático aguarda STATE_ENDED para não cortar cena.
+        val creditos = marcas?.creditos?.takeIf { it > duracao / 2 && it < duracao }
+        val antecipacao = creditos ?: (duracao - 40_000).coerceAtLeast(0)
+        if (posicao >= antecipacao && !proximoDispensado && proximo.visibility != View.VISIBLE) {
+            mostrarProximo(seguinte, iniciarContagem = creditos != null)
         }
     }
 
@@ -1100,7 +1120,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         video.requestFocus()
     }
 
-    private fun mostrarProximo(seguinte: Titulos.Ep) {
+    private fun mostrarProximo(seguinte: Titulos.Ep, iniciarContagem: Boolean = true) {
         val info = infoEpisodios[seguinte.numero].takeIf { seguinte.temporada == ep?.temporada }
         findViewById<TextView>(R.id.proximoTitulo).text = listOfNotNull(
             "T${seguinte.temporada} E${seguinte.numero}", info?.nome?.takeIf { it.isNotBlank() })
@@ -1110,7 +1130,8 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         esconderControles()
         proximo.visibility = View.VISIBLE
         findViewById<View>(R.id.proximoAgora).requestFocus()
-        contagem = if (Preferencias.proximoAutomatico) CONTAGEM_S else -1
+        handler.removeCallbacks(contar)
+        contagem = if (Preferencias.proximoAutomatico && iniciarContagem) CONTAGEM_S else -1
         atualizarContagem()
         if (contagem > 0) handler.postDelayed(contar, 1_000)
     }
@@ -1150,11 +1171,13 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             mostrarRecomendacoes()
             return
         }
-        if (Preferencias.proximoAutomatico && contagem != 0) {
+        handler.removeCallbacks(contar)
+        if (Preferencias.proximoAutomatico && !proximoDispensado) {
             irParaProximo(sozinho = true)
-        } else if (proximo.visibility != View.VISIBLE) {
-            proximoDispensado = false
-            mostrarProximo(seguinte)
+        } else {
+            if (proximo.visibility != View.VISIBLE) mostrarProximo(seguinte, iniciarContagem = false)
+            contagem = -1
+            atualizarContagem()
         }
     }
 
@@ -1224,6 +1247,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         val seguinte = ep?.let { r.seguinte(it) } ?: return
         handler.removeCallbacks(contar)
         guardar()
+        fimTratado = false
         if (sozinho) seguidosSozinhos++ else seguidosSozinhos = 0
         if (seguinte.temporada != ep?.temporada) infoEpisodios = emptyMap()
         ep = seguinte
@@ -1253,7 +1277,12 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         val r = resolvido ?: return
         if (!tocou) return
         if (r.reservado) return
-        Progresso.salvar(this, r.chave(ep), p.currentPosition, p.duration)
+        val creditos = marcas?.creditos?.takeIf { it > p.duration / 2 && it < p.duration }
+        val concluido = creditos != null && p.currentPosition >= creditos
+        Progresso.salvar(this, r.chave(ep), if (concluido) p.duration else p.currentPosition, p.duration)
+        if (concluido && r.serie && ep?.let { r.seguinte(it) } == null) {
+            Progresso.finalizarSerie(this, r.nomeChave)
+        }
         ProximaNaTv.atualizar(this, r, ep, p.currentPosition, p.duration)
     }
 

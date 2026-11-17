@@ -46,13 +46,15 @@ object MenuGlobal {
         barra.addView(if (BuildConfig.TV_AO_VIVO) ImageView(tela).apply {
             setImageResource(R.mipmap.ic_launcher)
             layoutParams = LinearLayout.LayoutParams((28 * d).toInt(), (28 * d).toInt()).apply { marginEnd = (8 * d).toInt() }
-        } else TextView(tela).apply {
-            text = tela.getString(R.string.app_name)
-            textSize = 21f
-            typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
-            setTextColor(ContextCompat.getColor(tela, R.color.accent))
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = (22 * d).toInt() }
+        } else ImageView(tela).apply {
+            // Logo vetorial por extenso: não precisa carregar imagem da rede,
+            // decodificar bitmap grande ou carregar uma fonte adicional.
+            setImageResource(R.drawable.lumeflix_wordmark)
+            contentDescription = tela.getString(R.string.app_name)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
+            layoutParams = LinearLayout.LayoutParams((156 * d).toInt(),
+                (30 * d).toInt()).apply { marginEnd = (22 * d).toInt() }
         })
         val rolagem = HorizontalScrollView(tela).apply {
             isHorizontalScrollBarEnabled = false
@@ -100,9 +102,10 @@ object MenuGlobal {
                     aba == Aba.AJUSTES -> Icones.so(this, icone)
                     icone != 0 -> Icones.inicio(this, icone)
                 }
-                setOnFocusChangeListener { _, foco -> if (foco) aoFocar?.invoke() }
-                // Para os lados, o menu anda de aba em aba e para nas pontas:
-                // no fim, a busca do sistema achava algo "à direita" lá embaixo.
+                // Foco sozinho não navega: o Android pode passar por esta aba
+                // ao mover o foco entre a barra e o conteúdo. Esquerda/direita
+                // abaixo abrem explicitamente o destino, sem trocar de tela ao
+                // entrar na barra vindo das categorias.
                 setOnKeyListener { v, codigo, evento ->
                     if (evento.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                     val passo = when (codigo) {
@@ -112,11 +115,8 @@ object MenuGlobal {
                     }
                     var i = abas.indexOfChild(v) + passo
                     while (i in 0 until abas.childCount && abas.getChildAt(i).visibility != View.VISIBLE) i += passo
-                    val proxima = abas.getChildAt(i)
-                    proxima?.requestFocus()
-                    if (!BuildConfig.TV_AO_VIVO && proxima?.tag in listOf(Aba.INICIO, Aba.ON_DEMAND, Aba.SERIES)) {
-                        ir(tela, proxima!!.tag as Aba, atual, manterMenu = true)
-                    }
+                    val destino = abas.getChildAt(i)
+                    if (destino != null && destino.requestFocus()) destino.performClick()
                     true
                 }
                 setOnClickListener {
@@ -161,7 +161,7 @@ object MenuGlobal {
         abas.findViewWithTag<View>(Aba.EXTRAS)?.visibility = if (Unlock.unlocked) View.VISIBLE else View.GONE
     }
 
-    private fun ir(tela: Activity, aba: Aba, atual: Aba, manterMenu: Boolean = false) {
+    private fun ir(tela: Activity, aba: Aba, atual: Aba) {
         if (aba == atual || !Conteudo.permiteAba(aba)) return
         val inicio = Intent(tela, EscolhaActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -178,7 +178,6 @@ object MenuGlobal {
             Aba.AJUSTES -> Intent(tela, AjustesActivity::class.java)
             Aba.APOIE -> Intent(tela, DoacaoActivity::class.java)
         }
-        if (manterMenu) (destino ?: inicio).putExtra("menu.manterFoco", true)
         if (destino == null) tela.startActivity(inicio)
         else tela.startActivities(arrayOf(inicio, destino))
         tela.overridePendingTransition(0, 0)
@@ -304,8 +303,27 @@ abstract class TelaComMenu : AppCompatActivity() {
         val abas = barra.findViewById<ViewGroup>(R.id.menuGlobalAbas)
         abas.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         val liberar = Runnable { abas.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS }
-        raiz.viewTreeObserver.addOnGlobalFocusChangeListener { _, novo ->
+
+        fun dentroDoMenu(view: View?): Boolean {
+            var atual = view
+            while (atual != null) {
+                if (atual === barra) return true
+                atual = atual.parent as? View
+            }
+            return false
+        }
+        raiz.viewTreeObserver.addOnGlobalFocusChangeListener { anterior, novo ->
             if (novo != null && abas.descendantFocusability == ViewGroup.FOCUS_BLOCK_DESCENDANTS) liberar.run()
+            // Ao subir do catálogo para a barra, o Android escolhia a aba mais
+            // à esquerda ("Início") pela geometria, mesmo estando em Filmes
+            // ou Séries. Redireciona a PRIMEIRA entrada para a aba atual.
+            // Navegação entre abas com esquerda/direita continua livre.
+            if (novo != null && dentroDoMenu(novo) && !dentroDoMenu(anterior)) {
+                val atual = abas.findViewWithTag<View>(aba)
+                if (atual != null && atual !== novo && atual.visibility == View.VISIBLE) {
+                    atual.requestFocus()
+                }
+            }
         }
         raiz.postDelayed(liberar, 2_000)
     }

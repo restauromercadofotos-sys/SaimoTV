@@ -1,0 +1,53 @@
+name: TV Ao Vivo
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/tv-ao-vivo.yml'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - 'gradle.properties'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Configurar assinatura estável dos APKs de teste
+        env:
+          CI_KEYSTORE_BASE64: ${{ secrets.CI_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$CI_KEYSTORE_BASE64"
+          printf '%s' "$CI_KEYSTORE_BASE64" | base64 --decode > ci-debug.jks
+          printf 'storeFile=../ci-debug.jks\nstoreType=PKCS12\nstorePassword=android\nkeyAlias=apps\nkeyPassword=android\n' > keystore.properties
+      - name: Testar e compilar TV Ao Vivo
+        run: ./gradlew --no-daemon :app:testAoVivoDebugUnitTest :app:assembleAoVivoDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saimo-tv-ao-vivo-debug
+          path: app/build/outputs/apk/aoVivo/debug/*.apk
+          if-no-files-found: error
+      - name: Resultados dos testes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultados-dos-testes
+          path: "**/build/reports/tests/"
+          if-no-files-found: ignore

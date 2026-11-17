@@ -29,9 +29,9 @@
     <application
         android:name=".LumeFlixApp"
         android:allowBackup="true"
-        android:banner="@drawable/banner"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:banner="@drawable/lumeflix_tv_banner"
+        android:icon="@drawable/lumeflix_app_icon"
+        android:roundIcon="@drawable/lumeflix_app_icon"
         android:label="@string/app_name"
         android:largeHeap="true"
         android:enableOnBackInvokedCallback="false"

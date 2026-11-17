@@ -96,7 +96,7 @@ object PainelEpisodios {
         lista.setItemViewCacheSize(4)
 
         var mostrada = 0
-        val adaptador = Adaptador(r, noAr,
+        val adaptador = Adaptador(r, noAr, escopo,
             aoEscolher = { e ->
                 dialogo.dismiss()
                 if (e != noAr) aoEscolher(e)
@@ -211,6 +211,7 @@ object PainelEpisodios {
     private class Adaptador(
         private val r: Titulos.Resolvido,
         private val noAr: Titulos.Ep,
+        private val escopo: CoroutineScope,
         private val aoEscolher: (Titulos.Ep) -> Unit,
         private val aoSubir: () -> Unit,
     ) : RecyclerView.Adapter<Adaptador.Holder>() {
@@ -221,6 +222,9 @@ object PainelEpisodios {
         /// Falso até o TMDB responder pela temporada: antes disso a imagem da
         /// série entraria em todos os cartões só para ser trocada em seguida.
         private var respondeu = false
+        private val miniaturasExtras = mutableMapOf<Pair<Int, Int>, String>()
+        private val consultasConcluidas = mutableSetOf<Pair<Int, Int>>()
+        private val consultasIniciadas = mutableSetOf<Pair<Int, Int>>()
         /// A imagem da série, para quando o episódio não tem a dele.
         var reserva: String? = null
 
@@ -281,11 +285,23 @@ object PainelEpisodios {
             holder.visto.visibility = if (!tocando && fracao != null && fracao >= 1f) View.VISIBLE else View.GONE
             holder.progresso.visibility = if (fracao != null && fracao < 1f) View.VISIBLE else View.GONE
             fracao?.let { holder.progresso.progress = (it * 1000).toInt() }
-            val url = dados?.imagem ?: reserva.takeIf { respondeu }
-            // Mesmo endereço já na tela (os nomes chegaram depois): não recarrega.
-            if (holder.imagem.tag != url || holder.imagem.drawable == null) {
-                holder.imagem.tag = url
-                Cartoes.carregar(holder.imagem, holder.numero, url)
+            val chave = ep.temporada to ep.numero
+            val url = dados?.imagem ?: miniaturasExtras[chave] ?: reserva.takeIf { respondeu }
+            Cartoes.carregar(holder.imagem, holder.numero, url, aoFalhar = {
+                if (holder.imagem.tag == url) holder.numero.visibility = View.VISIBLE
+            })
+            if (url == null) holder.numero.visibility = if (respondeu && (r.tmdbId <= 0 || chave in consultasConcluidas)) View.VISIBLE else View.INVISIBLE
+            // TMDB pode omitir o still_path em temporadas específicas; tenta
+            // o endpoint de imagens somente para os episódios já exibidos.
+            if (respondeu && dados?.imagem == null && r.tmdbId > 0 &&
+                consultasIniciadas.add(chave)) {
+                escopo.launch {
+                    val encontrada = Detalhes.imagemEpisodio(r.tmdbId, chave.first, chave.second)
+                    consultasConcluidas.add(chave)
+                    if (encontrada != null) miniaturasExtras[chave] = encontrada
+                    val pos = itens.indexOfFirst { it.temporada == chave.first && it.numero == chave.second }
+                    if (pos >= 0) notifyItemChanged(pos)
+                }
             }
         }
 

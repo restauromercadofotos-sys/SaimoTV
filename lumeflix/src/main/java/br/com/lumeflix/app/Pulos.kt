@@ -1,6 +1,7 @@
 package br.com.lumeflix.app
 
 import androidx.media3.common.util.UnstableApi
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -21,7 +22,7 @@ import org.json.JSONObject
 @UnstableApi
 object Pulos {
 
-    private const val BASE = "https://api.theintrodb.org/v3/media"
+    private const val BASE = "https://api.theintrodb.org/v4/media"
 
     /** Um trecho, em milissegundos. [fim] nulo quer dizer "até o fim do vídeo". */
     data class Trecho(val tipo: Tipo, val inicio: Long, val fim: Long?)
@@ -56,10 +57,20 @@ object Pulos {
                     .header("User-Agent", "SaimoTV/${BuildConfig.VERSION_NAME}")
                     .build()
                 Playback.client.newCall(pedido).execute().use { r ->
-                    if (!r.isSuccessful) null else r.body?.string()?.let(::JSONObject)
+                    if (!r.isSuccessful) {
+                        Log.w("LumeFlix-Pulos", "TheIntroDB HTTP ${r.code} para TMDB $tmdbId T$temporada E$episodio")
+                        null
+                    } else r.body?.string()?.let(::JSONObject)
                 }
+            }.onFailure { e ->
+                Log.w("LumeFlix-Pulos", "Erro na consulta de abertura/créditos para TMDB $tmdbId", e)
             }.getOrNull() ?: return@withContext null
             val marcas = Marcas(ler(json))
+            if (marcas.trechos.isNotEmpty()) {
+                Log.d("LumeFlix-Pulos", "T$temporada E$episodio: ${marcas.trechos.size} marcações")
+            } else {
+                Log.d("LumeFlix-Pulos", "Sem marcações para TMDB $tmdbId T$temporada E$episodio")
+            }
             synchronized(guardadas) { guardadas[chave] = marcas }
             marcas
         }
@@ -74,6 +85,9 @@ object Pulos {
                 val item = lista.optJSONObject(i) ?: continue
                 val inicio = if (item.isNull("start_ms")) 0L else item.optLong("start_ms", 0L)
                 val fim = if (item.isNull("end_ms")) null else item.optLong("end_ms")
+                // Nunca faça seek com valores ausentes, negativos ou inválidos.
+                if (inicio < 0 || (fim != null && fim <= inicio)) continue
+                if (tipo != Tipo.CREDITOS && fim == null) continue
                 // Trecho de menos de três segundos é marcação errada.
                 if (fim != null && fim - inicio < 3_000) continue
                 out += Trecho(tipo, inicio, fim)

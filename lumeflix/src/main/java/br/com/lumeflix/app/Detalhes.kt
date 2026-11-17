@@ -1,10 +1,13 @@
 package br.com.lumeflix.app
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * A ficha de um título: sinopse, duração, classificação, gêneros e elenco.
@@ -79,6 +82,7 @@ object Detalhes {
         synchronized(guardadas) { guardadas.clear() }
         synchronized(perfis) { perfis.clear() }
         synchronized(temporadas) { temporadas.clear() }
+        synchronized(imagensDeEpisodios) { imagensDeEpisodios.clear() }
         synchronized(resumoTemporadas) { resumoTemporadas.clear() }
     }
 
@@ -305,6 +309,34 @@ object Detalhes {
     )
 
     private val temporadas = recentes<String, List<EpisodioTmdb>>(60)
+    /** No máximo duas consultas extras ao TMDB simultâneas, pensando na Mi Box. */
+    private val consultasDeImagens = Semaphore(2)
+    private val imagensDeEpisodios = recentes<String, String>(180)
+
+    /**
+     * Consulta sob demanda os stills de um episódio sem miniatura em
+     * /tv/{id}/season/{temporada}. O endpoint /images pode conter imagens
+     * adicionais; só é chamado quando a fileira já recebeu os dados da temporada
+     * e o cartão está visível. Nunca busca o acervo inteiro de uma vez.
+     */
+    suspend fun imagemEpisodio(id: Int, temporada: Int, numero: Int): String? =
+        withContext(Dispatchers.IO) {
+            if (id <= 0 || temporada < 0 || numero <= 0) return@withContext null
+            val chave = "$id|$temporada|$numero"
+            synchronized(imagensDeEpisodios) { imagensDeEpisodios[chave] }
+                ?.let { return@withContext it }
+            val json = consultasDeImagens.withPermit {
+                pedir("$BASE/tv/$id/season/$temporada/episode/$numero/images?api_key=$CHAVE&include_image_language=pt,en,null")
+            } ?: return@withContext null
+            val stills = json.optJSONArray("stills") ?: return@withContext null
+            val caminho = (0 until stills.length()).firstNotNullOfOrNull { i ->
+                stills.optJSONObject(i)?.optString("file_path")
+                    ?.takeIf { it.isNotBlank() && it != "null" }
+            } ?: return@withContext null
+            val imagem = IMAGENS + "w300" + caminho
+            synchronized(imagensDeEpisodios) { imagensDeEpisodios[chave] = imagem }
+            imagem
+        }
 
     /** Os episódios de uma temporada, para a lista da ficha ter nome e imagem. */
     suspend fun temporada(id: Int, numero: Int): List<EpisodioTmdb> = withContext(Dispatchers.IO) {
@@ -327,6 +359,9 @@ object Detalhes {
             )
         }
         synchronized(temporadas) { temporadas[chave] = out }
+        if (out.isNotEmpty() && out.none { it.imagem != null }) {
+            Log.i("LumeFlix-TMDB", "Temporada $numero de série $id sem still_path; consultando /images só para cartões visíveis")
+        }
         out
     }
 
@@ -415,8 +450,14 @@ object Detalhes {
             .header("Accept", "application/json")
             .build()
         cliente.newCall(pedido).execute().use { r ->
-            if (!r.isSuccessful) null else r.body.string().let { JSONObject(it) }
+            if (!r.isSuccessful) {
+                // Registra somente a rota, jamais a API key dos parâmetros.
+                Log.w("LumeFlix-TMDB", "HTTP ${r.code} em ${r.request.url.encodedPath}")
+                null
+            } else JSONObject(r.body.string())
         }
+    }.onFailure {
+        Log.w("LumeFlix-TMDB", "Falha ao consultar metadados ou miniatura", it)
     }.getOrNull()
 
     suspend fun temporadasDaSerie(tmdbId: Int): List<TemporadaResumo> = withContext(Dispatchers.IO) {
