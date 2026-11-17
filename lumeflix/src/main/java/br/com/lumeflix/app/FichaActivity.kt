@@ -590,7 +590,7 @@ private class EpisodiosAdapter(
     private var reserva: String? = null
     private val miniaturasExtras = mutableMapOf<Pair<Int, Int>, String>()
     private val consultasConcluidas = mutableSetOf<Pair<Int, Int>>()
-        private val consultasIniciadas = mutableSetOf<Pair<Int, Int>>()
+    private val consultasIniciadas = mutableSetOf<Pair<Int, Int>>()
 
     fun atualizarReserva(url: String?) {
         if (url.isNullOrBlank() || url == reserva) return
