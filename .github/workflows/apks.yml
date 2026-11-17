@@ -48,11 +48,11 @@ jobs:
           if [ "$ALVO" = "tv" ]; then
             ./gradlew --no-daemon :app:testAoVivoDebugUnitTest :app:assembleAoVivoDebug
           elif [ "$ALVO" = "filmes" ]; then
-            ./gradlew --no-daemon :app:testFilmesSeriesDebugUnitTest :app:assembleFilmesSeriesDebug
+            ./gradlew --no-daemon :lumeflix:testDebugUnitTest :lumeflix:assembleDebug
           else
             ./gradlew --no-daemon \
-              :app:testAoVivoDebugUnitTest :app:testFilmesSeriesDebugUnitTest \
-              :app:assembleAoVivoDebug :app:assembleFilmesSeriesDebug
+              :app:testAoVivoDebugUnitTest :lumeflix:testDebugUnitTest \
+              :app:assembleAoVivoDebug :lumeflix:assembleDebug
           fi
       - name: APK de TV ao vivo
         if: github.event_name == 'pull_request' || inputs.alvo == 'tv' || inputs.alvo == 'ambos'
@@ -65,13 +65,13 @@ jobs:
         if: github.event_name == 'pull_request' || inputs.alvo == 'filmes' || inputs.alvo == 'ambos'
         uses: actions/upload-artifact@v4
         with:
-          name: saimo-filmes-series-debug
-          path: app/build/outputs/apk/filmesSeries/debug/*.apk
+          name: lumeflix-debug
+          path: lumeflix/build/outputs/apk/debug/*.apk
           if-no-files-found: error
       - name: Resultados dos testes
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: resultados-dos-testes
-          path: app/build/reports/tests/
+          path: "**/build/reports/tests/"
           if-no-files-found: ignore

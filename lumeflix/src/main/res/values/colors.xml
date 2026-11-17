@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paleta tirada do próprio ícone: fundo quase preto, ciano como único
+     destaque. Uma cor de acento só é o que mantém a tela calma numa TV. -->
+<resources>
+    
+    
+    
+    
+
+    
+    
+    
+
+    
+    
+    
+
+    <color name="live">#FF4D4F</color>
+
+    <!-- O azul-marinho do primeiro quadro da abertura: a janela abre nele e o
+         vídeo entra sem clarão. -->
+    <color name="abertura_fundo">#0B0F2A</color>
+
+    <color name="surface">#050505</color>
+    <color name="surface_card">#E6101010</color>
+    <color name="surface_panel">#FA080808</color>
+    <color name="surface_raised">#FF202020</color>
+    <color name="accent">#A98232</color>
+    <color name="accent_dim">#66A98232</color>
+    <color name="accent_edge">#99A98232</color>
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#FFB3B3B3</color>
+    <color name="text_faint">#FF737373</color>
+</resources>
+

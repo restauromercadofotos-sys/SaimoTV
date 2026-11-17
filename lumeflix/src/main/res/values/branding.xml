@@ -1,0 +1,10 @@
+<resources>
+    <string name="ajustes_sobre">LumeFlix %1$s\nID do aparelho: %2$s\n\nBaseado no projeto SaimoTV.</string>
+    <string name="vazio_inicio">Bem-vindo ao LumeFlix! Configure sua lista em Ajustes.</string>
+    <string name="timer_aviso">LumeFlix vai fechar em 1 minuto</string>
+    <string name="busca_sistema_rotulo">LumeFlix</string>
+    <string name="menu_on_demand">Filmes e séries</string>
+    <string name="vod_favoritos">Minha lista</string>
+    <string name="update_permissao_texto">Para atualizar, permita que LumeFlix instale apps nas configurações da TV.</string>
+    <string name="update_permissao_sem_tela">Ative Fontes desconhecidas para LumeFlix nas configurações da TV</string>
+</resources>

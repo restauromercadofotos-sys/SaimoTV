@@ -43,15 +43,6 @@ android {
             buildConfigField("String", "LINK_SCHEME", "\"saimo-aovivo\"")
             manifestPlaceholders["linkScheme"] = "saimo-aovivo"
         }
-        create("filmesSeries") {
-            dimension = "conteudo"
-            applicationIdSuffix = ".filmes"
-            resValue("string", "app_name", "LumeFlix")
-            resValue("string", "busca_authority", "br.com.saimo.tv.filmes.busca")
-            buildConfigField("boolean", "TV_AO_VIVO", "false")
-            buildConfigField("String", "LINK_SCHEME", "\"saimo-filmes\"")
-            manifestPlaceholders["linkScheme"] = "saimo-filmes"
-        }
     }
 
     signingConfigs {
