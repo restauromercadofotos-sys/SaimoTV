@@ -108,6 +108,14 @@
                     android:textColor="@color/accent"
                     android:textSize="13sp" />
 
+                <ImageView
+                    android:id="@+id/fichaLogoTitulo"
+                    android:layout_width="240dp"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="4dp"
+                    android:scaleType="fitStart"
+                    android:visibility="gone" />
+
                 <TextView
                     android:id="@+id/fichaTitulo"
                     android:layout_width="match_parent"
