@@ -45,6 +45,7 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
 import coil3.load
+import coil3.dispose
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -247,6 +248,12 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         setIntent(intent)
         val novoAlvo = Alvo.de(intent) ?: return
         alvo = novoAlvo
+        findViewById<ImageView>(R.id.playerLogo).apply {
+            dispose()
+            setImageDrawable(null)
+            visibility = View.GONE
+        }
+        titulo.visibility = View.VISIBLE
         titulo.text = Generos.semAno(alvo.titulo)
         intent.getStringExtra(VERSAO)?.let { versao = it }
         status.text = getString(R.string.player_abrindo)
@@ -297,12 +304,20 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
 
     /** A logo do título à esquerda do nome, no topo; sem logo no TMDB, só o nome. */
     private fun mostrarLogo(r: Titulos.Resolvido) {
+        val original = alvo
         lifecycleScope.launch(semDerrubar) {
             val url = Detalhes.de(r.alvo.titulo, r.serie, r.tmdbId.takeIf { it > 0 })?.logo ?: return@launch
-            if (isFinishing || isDestroyed) return@launch
+            if (isFinishing || isDestroyed || alvo !== original) return@launch
             val logo = findViewById<ImageView>(R.id.playerLogo)
             logo.load(url) {
-                listener(onSuccess = { _, _ -> logo.visibility = View.VISIBLE })
+                listener(onSuccess = { _, _ ->
+                    if (alvo === original) {
+                        logo.contentDescription = titulo.text
+                        logo.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                        titulo.visibility = View.GONE
+                        logo.visibility = View.VISIBLE
+                    }
+                })
             }
         }
     }

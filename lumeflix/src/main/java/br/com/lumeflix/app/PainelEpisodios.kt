@@ -77,7 +77,7 @@ object PainelEpisodios {
             vista.setPadding(vista.paddingLeft, Vr.dp(activity, 12), vista.paddingRight, Vr.dp(activity, 8))
             vista.findViewById<View>(R.id.peDica).visibility = View.GONE
         }
-        vista.findViewById<TextView>(R.id.peTitulo).text = Generos.semAno(r.alvo.titulo)
+        vista.findViewById<TextView>(R.id.peTitulo).setText(R.string.player_episodios)
         vista.findViewById<TextView>(R.id.peSubtitulo).text =
             activity.getString(R.string.player_eps_no_ar, noAr.temporada, noAr.numero)
         if (Vr.ativo) {
