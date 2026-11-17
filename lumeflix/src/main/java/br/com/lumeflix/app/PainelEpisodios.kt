@@ -286,7 +286,7 @@ object PainelEpisodios {
             holder.progresso.visibility = if (fracao != null && fracao < 1f) View.VISIBLE else View.GONE
             fracao?.let { holder.progresso.progress = (it * 1000).toInt() }
             val chave = ep.temporada to ep.numero
-            val url = dados?.imagem ?: miniaturasExtras[chave] ?: reserva.takeIf { respondeu }
+            val url = dados?.imagem ?: miniaturasExtras[chave] ?: reserva
             Cartoes.carregar(holder.imagem, holder.numero, url, aoFalhar = {
                 if (holder.imagem.tag == url) holder.numero.visibility = View.VISIBLE
             })
