@@ -61,11 +61,11 @@ object Titulos {
             get() = Progresso.Endereco(alvo.titulo, alvo.serie, alvo.letra, alvo.ano, alvo.colecao, tmdbId)
     }
 
-    suspend fun resolver(context: Context, alvo: Alvo): Resolvido? {
-        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { resolverNoCatalogo(context, alvo) }
+    suspend fun resolver(context: Context, alvo: Alvo, aoLerLocais: (suspend (Resolvido) -> Unit)? = null): Resolvido? {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { resolverNoCatalogo(context, alvo, aoLerLocais) }
     }
 
-    private suspend fun resolverNoCatalogo(context: Context, alvo: Alvo): Resolvido? {
+    private suspend fun resolverNoCatalogo(context: Context, alvo: Alvo, aoLerLocais: (suspend (Resolvido) -> Unit)?): Resolvido? {
         if (alvo.colecao.isNotEmpty()) {
             val achado = Vod.colecao(context, alvo.colecao)
                 .firstOrNull { it.titulo.equals(alvo.titulo, ignoreCase = true) } ?: return null
@@ -88,6 +88,7 @@ object Titulos {
             val nome = serie?.nomeCompleto ?: alvo.nomeCompleto
 
             if (tmdb > 0) {
+                if (agrupados.isNotEmpty()) aoLerLocais?.invoke(Resolvido(alvo, nome, null, agrupados, tmdb))
                 val temporadasTmdb = Detalhes.temporadasDaSerie(tmdb)
                 if (temporadasTmdb.isNotEmpty()) {
                     val mapa = agrupados.associateBy { it.temporada to it.numero }.toMutableMap()
