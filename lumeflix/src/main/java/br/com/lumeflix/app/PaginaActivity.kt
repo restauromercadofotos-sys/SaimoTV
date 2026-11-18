@@ -41,6 +41,7 @@ open class PaginaActivity : TelaComMenu() {
         fun abrir(context: Context, tipo: String) = context.startActivity(intent(context, tipo))
 
         /// Os gêneros mais procurados primeiro; o resto entra depois, em ordem.
+        private val indicesRecentes = android.util.LruCache<String, IndiceDeFilas>(2)
         private val ORDEM_GENEROS = listOf(
             "Ação", "Comédia", "Drama", "Terror", "Thriller", "Suspense", "Ficção científica",
             "Animação", "Romance", "Aventura", "Crime", "Família", "Fantasia", "Mistério",
@@ -123,6 +124,11 @@ open class PaginaActivity : TelaComMenu() {
 
     private data class Candidato(val alvo: Alvo, val ano: Int, val capa: String, val generos: Int)
 
+    private class IndiceDeFilas(
+        val entradas: List<Vod.Entrada>, val generos: List<String>,
+        val candidatos: List<Candidato>, val fileiras: List<Pair<String, List<Candidato>>>
+    )
+
     /** A letra de cada tipo em destaques.txt. */
     private fun letraDe(t: String) = when (t) {
         GradeActivity.FILMES -> 'f'; GradeActivity.SERIES -> 's'
@@ -183,19 +189,25 @@ open class PaginaActivity : TelaComMenu() {
     /** Uma página de um tipo só: lançamentos, gêneros e o A a Z. */
     private suspend fun montarTipo(lista: MutableList<Inicio.Fila>) {
         // Lançamentos e gêneros saem do acervo inteiro, fora da linha principal.
-        val candidatos = withContext(Dispatchers.Default) {
-            (if (colecao) daColecao(tipo) else doAcervo(serie))
+        val indice = withContext(Dispatchers.Default) {
+            val entradas = if (colecao) emptyList() else Vod.entradas(this@PaginaActivity)
+            val nomes = Generos.todos
+            val anterior = indicesRecentes.get(tipo)
+            if (!colecao && anterior != null && anterior.entradas === entradas && anterior.generos === nomes)
+                return@withContext anterior
+            val candidatos = (if (colecao) daColecao(tipo) else doAcervo(serie))
                 .sortedByDescending { it.ano }
                 .distinctBy { item -> item.alvo.tmdbId.takeIf { it > 0 } ?: Generos.id(item.alvo.titulo, item.alvo.serie)
                     ?: Pair(Generos.semAno(item.alvo.titulo).lowercase(Locale.ROOT), item.ano) }
+            val generos = nomes.sortedBy { g -> ORDEM_GENEROS.indexOf(g).let { if (it < 0) 99 else it } }
+            val fileiras = generos.mapNotNull { g -> porGenero(candidatos, g)?.let { g to it } }
+            IndiceDeFilas(entradas, nomes, candidatos, fileiras).also {
+                if (!colecao && fileiras.isNotEmpty()) indicesRecentes.put(tipo, it)
+            }
         }
         indicePorGenero.clear()
-        lancamentos(candidatos)?.let { lista += Inicio.Fila(getString(R.string.pagina_lancamentos), it) }
-
-        val porGenero = withContext(Dispatchers.Default) {
-            val generos = Generos.todos.sortedBy { g -> ORDEM_GENEROS.indexOf(g).let { if (it < 0) 99 else it } }
-            generos.mapNotNull { g -> porGenero(candidatos, g)?.let { g to it } }
-        }
+        lancamentos(indice.candidatos)?.let { lista += Inicio.Fila(getString(R.string.pagina_lancamentos), it) }
+        val porGenero = indice.fileiras
         // Apenas gêneros com fileiras reais entram no seletor: evita
         // escolher um gênero e não acontecer nada.
         generosDaPagina = porGenero.map { it.first }

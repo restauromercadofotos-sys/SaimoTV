@@ -46,6 +46,7 @@ object Icones {
 
     /** Só o ícone, sem texto — tecla do teclado, aba de ajustes. */
     fun so(tv: TextView, @DrawableRes id: Int, escala: Float = 1.4f) {
+        if (tv.contentDescription.isNullOrEmpty()) tv.contentDescription = tv.text
         tv.text = ""
         val px = (tv.textSize * escala).toInt()
         tv.setCompoundDrawablesRelative(desenho(tv.context, id, px, tv.textColors), null, null, null)
