@@ -169,13 +169,25 @@ open class PaginaActivity : TelaComMenu() {
 
         if (todos) montarTodos(lista) else montarTipo(lista)
         mostrar(lista)
+        if (!todos && !colecao) {
+            val ranking = Detalhes.emAlta(this, serie)
+            if (ranking.isNotEmpty()) {
+                lista += Inicio.Fila("Em alta hoje no TMDB · Top ${ranking.size}", ranking.map {
+                    cartao(Alvo(it.titulo, it.serie, it.letra, it.ano), Generos.capa(it.nomeCompleto, serie).orEmpty())
+                })
+                mostrar(lista)
+            }
+        }
     }
 
     /** Uma página de um tipo só: lançamentos, gêneros e o A a Z. */
     private suspend fun montarTipo(lista: MutableList<Inicio.Fila>) {
         // Lançamentos e gêneros saem do acervo inteiro, fora da linha principal.
         val candidatos = withContext(Dispatchers.Default) {
-            if (colecao) daColecao(tipo) else doAcervo(serie)
+            (if (colecao) daColecao(tipo) else doAcervo(serie))
+                .sortedByDescending { it.ano }
+                .distinctBy { item -> item.alvo.tmdbId.takeIf { it > 0 } ?: Generos.id(item.alvo.titulo, item.alvo.serie)
+                    ?: Pair(Generos.semAno(item.alvo.titulo).lowercase(Locale.ROOT), item.ano) }
         }
         indicePorGenero.clear()
         lancamentos(candidatos)?.let { lista += Inicio.Fila(getString(R.string.pagina_lancamentos), it) }
@@ -345,11 +357,7 @@ open class PaginaActivity : TelaComMenu() {
         val bit = Generos.bit(genero)
         return candidatos.asSequence()
             .filter { it.generos and bit != 0 }
-            .sortedByDescending { it.ano }
-            // Uma fileira longa parece contínua no controle, sem manter dezenas
-            // de milhares de cartões duplicados em memória em cada gênero.
-            // O RecyclerView cria imagens apenas para a janela visível.
-            .distinctBy { it.alvo.tmdbId.takeIf { id -> id > 0 } ?: Generos.id(it.alvo.titulo, it.alvo.serie) ?: Pair(Generos.semAno(it.alvo.titulo).lowercase(Locale.ROOT), it.ano) }.toList()
+            .toList()
             .takeIf { it.size >= 6 }
     }
 

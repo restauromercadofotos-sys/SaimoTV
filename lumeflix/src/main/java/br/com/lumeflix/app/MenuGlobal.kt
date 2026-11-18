@@ -66,7 +66,7 @@ object MenuGlobal {
         }
         val abas = LinearLayout(tela).apply { orientation = LinearLayout.HORIZONTAL; id = R.id.menuGlobalAbas }
         rolagem.addView(abas)
-        barra.addView(rolagem)
+        barra.addView(rolagem, 0)
 
         val itens = if (BuildConfig.TV_AO_VIVO) listOf(
             Triple(Aba.INICIO, R.string.menu_inicio, R.drawable.ic_home),
@@ -74,14 +74,15 @@ object MenuGlobal {
             Triple(Aba.EVENTOS, R.string.menu_eventos, R.drawable.ic_football),
             Triple(Aba.AJUSTES, R.string.menu_ajustes, R.drawable.ic_settings),
         ) else listOf(
+            Triple(Aba.BUSCAR, R.string.menu_buscar, R.drawable.ic_search),
             Triple(Aba.INICIO, R.string.menu_inicio, 0),
             Triple(Aba.ON_DEMAND, R.string.vod_filmes, 0),
             Triple(Aba.SERIES, R.string.vod_series, 0),
             Triple(Aba.FAVORITOS, R.string.vod_favoritos, 0),
-            Triple(Aba.BUSCAR, R.string.menu_buscar, R.drawable.ic_search),
             Triple(Aba.AJUSTES, R.string.menu_ajustes, R.drawable.ic_settings),
         )
 
+        var navegacaoPendente: Runnable? = null
         for ((aba, texto, icone) in itens.filter { Conteudo.permiteAba(it.first) }) {
             abas.addView(TextView(tela).apply {
                 text = tela.getString(texto)
@@ -99,7 +100,7 @@ object MenuGlobal {
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = (1 * d).toInt() }
                 when {
-                    aba == Aba.AJUSTES -> Icones.so(this, icone)
+                    aba == Aba.AJUSTES || aba == Aba.BUSCAR -> Icones.so(this, icone)
                     icone != 0 -> Icones.inicio(this, icone)
                 }
                 // Foco sozinho não navega: o Android pode passar por esta aba
@@ -116,10 +117,17 @@ object MenuGlobal {
                     var i = abas.indexOfChild(v) + passo
                     while (i in 0 until abas.childCount && abas.getChildAt(i).visibility != View.VISIBLE) i += passo
                     val destino = abas.getChildAt(i)
-                    if (destino != null && destino.requestFocus()) destino.performClick()
+                    if (destino != null && destino.requestFocus()) {
+                        navegacaoPendente?.let(abas::removeCallbacks)
+                        navegacaoPendente = Runnable {
+                            if (destino.isFocused && destino.isAttachedToWindow && !tela.isFinishing)
+                                ir(tela, destino.tag as Aba, atual, peloDirecional = true)
+                        }.also { abas.postDelayed(it, 140) }
+                    }
                     true
                 }
                 setOnClickListener {
+                    navegacaoPendente?.let(abas::removeCallbacks)
                     if (aba == Aba.INICIO && aoInicio != null) aoInicio() else ir(tela, aba, atual)
                 }
             })
@@ -161,7 +169,7 @@ object MenuGlobal {
         abas.findViewWithTag<View>(Aba.EXTRAS)?.visibility = if (Unlock.unlocked) View.VISIBLE else View.GONE
     }
 
-    private fun ir(tela: Activity, aba: Aba, atual: Aba) {
+    private fun ir(tela: Activity, aba: Aba, atual: Aba, peloDirecional: Boolean = false) {
         if (aba == atual || !Conteudo.permiteAba(aba)) return
         val inicio = Intent(tela, EscolhaActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -178,6 +186,7 @@ object MenuGlobal {
             Aba.AJUSTES -> Intent(tela, AjustesActivity::class.java)
             Aba.APOIE -> Intent(tela, DoacaoActivity::class.java)
         }
+        (destino ?: inicio).putExtra("lumeflix.focoMenu", peloDirecional)
         if (destino == null) tela.startActivity(inicio)
         else tela.startActivities(arrayOf(inicio, destino))
         tela.overridePendingTransition(0, 0)
@@ -254,6 +263,7 @@ abstract class TelaComMenu : AppCompatActivity() {
      * depois de receberem os dados, e um único `post` às vezes chega cedo.
      */
     protected fun focarQuandoPronto(tentativas: Int = 20, achar: () -> View?) {
+        if (barraMenu?.hasFocus() == true) return
         val alvo = achar()
         if (alvo?.requestFocus() == true) return
         if (tentativas > 0) window.decorView.postDelayed({ focarQuandoPronto(tentativas - 1, achar) }, 60)
@@ -301,7 +311,9 @@ abstract class TelaComMenu : AppCompatActivity() {
         // fora; depois (ou em dois segundos, se o conteúdo não tiver nada), a
         // seta para cima chega nele normalmente.
         val abas = barra.findViewById<ViewGroup>(R.id.menuGlobalAbas)
-        abas.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        if (intent.getBooleanExtra("lumeflix.focoMenu", false)) {
+            MenuGlobal.focar(barra, aba)
+        } else abas.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         val liberar = Runnable { abas.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS }
 
         fun dentroDoMenu(view: View?): Boolean {

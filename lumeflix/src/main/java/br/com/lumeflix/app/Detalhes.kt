@@ -513,6 +513,27 @@ object Detalhes {
         val capa: String?,
     )
 
+    suspend fun emAlta(context: Context, serie: Boolean): List<Vod.Achado> = withContext(Dispatchers.IO) {
+        val tipo = if (serie) "tv" else "movie"
+        val dia = System.currentTimeMillis() / 86_400_000L
+        val cache = context.getSharedPreferences("tmdb_tendencias", Context.MODE_PRIVATE)
+        val ids = if (cache.getLong("$tipo.dia", -1) == dia) {
+            cache.getString(tipo, "").orEmpty().split(',').mapNotNull { it.toIntOrNull() }
+        } else {
+            val itens = pedir("$BASE/trending/$tipo/day?api_key=$CHAVE&language=pt-BR")
+                ?.optJSONArray("results") ?: return@withContext emptyList()
+            (0 until itens.length()).mapNotNull { itens.optJSONObject(it)?.optInt("id")?.takeIf { id -> id > 0 } }
+                .also { cache.edit().putLong("$tipo.dia", dia).putString(tipo, it.joinToString(",")).apply() }
+        }
+        val encontrados = mutableListOf<Vod.Achado>()
+        for (id in ids) {
+            val nome = Generos.titulo(id, serie) ?: continue
+            Vod.achar(context, nome, serie)?.let(encontrados::add)
+            if (encontrados.size == 10) break
+        }
+        encontrados
+    }
+
     suspend fun buscarTitulos(termo: String): List<TituloTmdb> = withContext(Dispatchers.IO) {
         val limpo = termo.trim()
         if (limpo.length < 2) return@withContext emptyList()

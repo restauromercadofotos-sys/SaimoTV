@@ -46,13 +46,11 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
     private var trabalho: Job? = null
     private val adaptador by lazy { Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) }) }
 
-    private var tecladoMinimizado = false
     private var ultimoFocoTeclado: View? = null
 
     private val voz = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         val dito = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() ?: return@registerForActivityResult
         digitado.clear(); digitado.append(dito)
-        if (tecladoMinimizado) expandirTeclado()
         atualizar(imediato = true)
     }
 
@@ -66,26 +64,6 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
         resultados.adapter = adaptador
         montarTeclado()
         intent.getStringExtra(TERMO)?.let { digitado.append(it) }
-
-        findViewById<View>(R.id.buscaVoltarTecladoDica)?.setOnClickListener {
-            expandirTeclado()
-            focarTeclado()
-        }
-
-        window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { oldFocus, newFocus ->
-            if (isFinishing || isDestroyed) return@addOnGlobalFocusChangeListener
-            val painelTeclado = findViewById<View>(R.id.buscaPainelTeclado) ?: return@addOnGlobalFocusChangeListener
-            if (newFocus != null) {
-                if (estaDentroDe(newFocus, resultados)) {
-                    if (oldFocus != null && estaDentroDe(oldFocus, painelTeclado)) {
-                        ultimoFocoTeclado = oldFocus
-                    }
-                    minimizarTeclado()
-                } else if (estaDentroDe(newFocus, painelTeclado)) {
-                    expandirTeclado()
-                }
-            }
-        }
 
         // Prepara o índice enquanto a pessoa ainda procura a primeira letra.
         lifecycleScope.launch(semDerrubar) { Generos.carregar(this@BuscaActivity); Vod.entradas(this@BuscaActivity) }
@@ -160,14 +138,14 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
 
     private fun montarTeclado() {
         val grade = findViewById<GridLayout>(R.id.buscaTeclas)
-        val teclas = ('A'..'Z').map { it.toString() } + (0..9).map { it.toString() }
-        for (t in teclas) grade.addView(tecla(t, 1) { digitar(t.lowercase()) })
-        grade.addView(tecla(getString(R.string.busca_espaco), 2) { digitar(" ") })
-        grade.addView(tecla(getString(R.string.busca_apagar), 1) { apagar() }.also { Icones.so(it as TextView, R.drawable.ic_backspace, 1.2f) })
-        grade.addView(tecla(getString(R.string.busca_limpar), 2) { digitado.clear(); atualizar(true) })
+        grade.addView(tecla(getString(R.string.busca_espaco), 3) { digitar(" ") })
+        grade.addView(tecla(getString(R.string.busca_apagar), 3) { apagar() })
+        val teclas = ('a'..'z') + ('1'..'9') + '0'
+        for (t in teclas) grade.addView(tecla(t.toString(), 1) { digitar(t.toString()) })
+        grade.addView(tecla(getString(R.string.busca_limpar), 3) { digitado.clear(); atualizar(true) })
         val temVoz = packageManager.queryIntentActivities(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH), 0).isNotEmpty()
-        if (temVoz) grade.addView(tecla(getString(R.string.busca_voz), 1) { ouvir() }.also { Icones.so(it as TextView, R.drawable.ic_mic, 1.2f) })
-        focarQuandoPronto { grade.getChildAt(0) }
+        if (temVoz) grade.addView(tecla(getString(R.string.busca_voz), 3) { ouvir() }.also { Icones.so(it as TextView, R.drawable.ic_mic, 1.2f) })
+        focarQuandoPronto { grade.getChildAt(2) }
     }
 
     private fun tecla(texto: String, colunas: Int, acao: () -> Unit): View = TextView(this).apply {
@@ -182,8 +160,8 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
         val d = resources.displayMetrics.density
         layoutParams = GridLayout.LayoutParams().apply {
             width = 0
-            height = (46 * d).toInt()
-            columnSpec = GridLayout.spec(GridLayout.UNDEFINED, colunas, 1f)
+            height = (36 * d).toInt()
+            columnSpec = GridLayout.spec(GridLayout.UNDEFINED, colunas, colunas.toFloat())
             setMargins((2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt())
         }
     }
@@ -194,50 +172,6 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "pt-BR")
                 .putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.busca_dica)))
-        }
-    }
-
-    private fun minimizarTeclado() {
-        if (tecladoMinimizado) return
-        tecladoMinimizado = true
-        val raiz = findViewById<android.view.ViewGroup>(R.id.buscaRaiz)
-        if (raiz != null) {
-            android.transition.TransitionManager.beginDelayedTransition(
-                raiz,
-                android.transition.ChangeBounds().apply {
-                    duration = 200
-                    interpolator = android.view.animation.DecelerateInterpolator()
-                }
-            )
-        }
-        findViewById<View>(R.id.buscaPainelTeclado)?.visibility = View.GONE
-        findViewById<View>(R.id.buscaMiniHeader)?.visibility = View.VISIBLE
-        atualizarMiniHeader()
-    }
-
-    private fun expandirTeclado() {
-        if (!tecladoMinimizado) return
-        tecladoMinimizado = false
-        val raiz = findViewById<android.view.ViewGroup>(R.id.buscaRaiz)
-        if (raiz != null) {
-            android.transition.TransitionManager.beginDelayedTransition(
-                raiz,
-                android.transition.ChangeBounds().apply {
-                    duration = 200
-                    interpolator = android.view.animation.DecelerateInterpolator()
-                }
-            )
-        }
-        findViewById<View>(R.id.buscaPainelTeclado)?.visibility = View.VISIBLE
-        findViewById<View>(R.id.buscaMiniHeader)?.visibility = View.GONE
-    }
-
-    private fun focarTeclado() {
-        val grade = findViewById<GridLayout>(R.id.buscaTeclas)
-        val alvo = ultimoFocoTeclado?.takeIf { it.isAttachedToWindow && it.visibility == View.VISIBLE }
-            ?: grade?.getChildAt(0)
-        alvo?.post {
-            alvo.requestFocus()
         }
     }
 
@@ -263,41 +197,22 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
         return false
     }
 
-    private fun atualizarMiniHeader() {
-        val termo = digitado.toString().trim()
-        val campoMini = findViewById<TextView>(R.id.buscaTermoMini)
-        campoMini?.text = if (termo.isNotEmpty()) "Resultados para: \"$termo\"" else getString(R.string.busca_recentes)
-    }
-
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN) {
-            val painelTeclado = findViewById<View>(R.id.buscaPainelTeclado)
-            if (event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && tecladoMinimizado) {
-                val cur = currentFocus
-                if (cur != null && estaDentroDe(cur, resultados)) {
-                    val proximo = cur.focusSearch(View.FOCUS_LEFT)
-                    if (proximo == null || !estaDentroDe(proximo, resultados)) {
-                        expandirTeclado()
-                        focarTeclado()
-                        return true
-                    }
+        val foco = currentFocus
+        if (event.action == KeyEvent.ACTION_DOWN && foco != null) {
+            val grade = findViewById<GridLayout>(R.id.buscaTeclas)
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && estaDentroDe(foco, resultados)) {
+                val lista = foco.parent as? RecyclerView
+                    ?: resultados.findContainingViewHolder(foco)?.itemView?.findViewById(R.id.filaCapas)
+                if (lista?.findContainingViewHolder(foco)?.bindingAdapterPosition == 0) {
+                    return (ultimoFocoTeclado ?: grade.getChildAt(2)).requestFocus()
                 }
-            } else if (event.keyCode == KeyEvent.KEYCODE_BACK && tecladoMinimizado) {
-                val cur = currentFocus
-                if (cur != null && estaDentroDe(cur, resultados)) {
-                    expandirTeclado()
-                    focarTeclado()
-                    return true
-                }
-            } else if (event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && !tecladoMinimizado && painelTeclado != null) {
-                val cur = currentFocus
-                if (cur != null && estaDentroDe(cur, painelTeclado)) {
-                    val proximo = cur.focusSearch(View.FOCUS_RIGHT)
-                    if (proximo == null || !estaDentroDe(proximo, painelTeclado)) {
-                        if (focarResultados()) {
-                            return true
-                        }
-                    }
+            }
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && foco.parent === grade) {
+                val vizinho = foco.focusSearch(View.FOCUS_RIGHT)
+                if (vizinho?.parent !== grade) {
+                    ultimoFocoTeclado = foco
+                    return focarResultados() || super.dispatchKeyEvent(event)
                 }
             }
         }
@@ -307,13 +222,11 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
     private fun digitar(t: String) {
         if (digitado.length >= 40) return
         digitado.append(t)
-        if (tecladoMinimizado) expandirTeclado()
         atualizar()
     }
 
     private fun apagar() {
         if (digitado.isNotEmpty()) digitado.deleteCharAt(digitado.length - 1)
-        if (tecladoMinimizado) expandirTeclado()
         atualizar()
     }
 
@@ -338,7 +251,6 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
      */
     private fun atualizar(imediato: Boolean = false) {
         campo.text = digitado
-        atualizarMiniHeader()
         trabalho?.cancel()
         val termo = digitado.toString().trim()
         trabalho = lifecycleScope.launch(semDerrubar) {
@@ -360,6 +272,7 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
             if (filmes.isNotEmpty()) filas += Inicio.Fila(getString(R.string.vod_filmes), filmes.map { cartao(it) })
             if (series.isNotEmpty()) filas += Inicio.Fila(getString(R.string.vod_series), series.map { cartao(it) })
 
+            if (filas.isNotEmpty()) mostrar(filas, termo)
             val colecoes = if (termo.length >= 2) Vod.buscarColecoes(this@BuscaActivity, termo).take(30) else emptyList()
             if (colecoes.isNotEmpty()) filas += Inicio.Fila(getString(R.string.busca_colecoes), colecoes.map { (tipo, c) ->
                 val alvo = Alvo(c.titulo, true, "", c.ano, tipo, c.tmdbId.toIntOrNull() ?: 0)
@@ -375,25 +288,24 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
                 delay(300)
                 val tmdbTitulos = Detalhes.buscarTitulos(termo)
                 if (tmdbTitulos.isNotEmpty() && digitado.toString().trim() == termo) {
-                    val conhecidosIds = achados.mapNotNull { Generos.id(it.nomeCompleto, it.serie) ?: Generos.id(it.titulo, it.serie) }.toSet()
-                    val novos = tmdbTitulos.filter { it.tmdbId !in conhecidosIds }
-                    if (novos.isNotEmpty()) {
-                        filas += Inicio.Fila(getString(R.string.pagina_lancamentos), novos.map { t ->
-                            val alvo = Alvo(t.titulo, t.serie, "", t.ano, tmdbId = t.tmdbId)
-                            Inicio.Cartao(
-                                titulo = t.titulo,
-                                capa = t.capa.orEmpty(),
-                                inicial = t.titulo.take(1).uppercase(),
-                                subtitulo = t.ano.takeIf { it.isNotBlank() },
-                                alvo = alvo,
-                                aoEscolher = {
-                                    lembrar()
-                                    FichaActivity.abrir(this@BuscaActivity, alvo)
-                                }
-                            )
-                        })
-                        mostrar(filas, termo)
+                    val relacionados = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                        Generos.carregar(this@BuscaActivity)
+                        tmdbTitulos.map { titulo ->
+                            val local = Generos.titulo(titulo.tmdbId, titulo.serie) ?: titulo.titulo
+                            titulo to Vod.achar(this@BuscaActivity, local, titulo.serie)
+                        }
                     }
+                    val disponiveis = relacionados.mapNotNull { it.second }.distinct().filterNot { it in achados }
+                    if (disponiveis.isNotEmpty()) filas += Inicio.Fila("Outros títulos do catálogo", disponiveis.map(::cartao))
+                    val descobertas = relacionados.filter { it.second == null }.map { (titulo, _) ->
+                        val alvo = Alvo(titulo.titulo, titulo.serie, "", titulo.ano, tmdbId = titulo.tmdbId)
+                        Inicio.Cartao(titulo.titulo, titulo.capa.orEmpty(), titulo.titulo.take(1), alvo = alvo) {
+                            lembrar()
+                            FichaActivity.abrir(this@BuscaActivity, alvo)
+                        }
+                    }
+                    if (descobertas.isNotEmpty()) filas += Inicio.Fila("Descobertas no TMDB", descobertas)
+                    mostrar(filas, termo)
                 }
             }
 
@@ -415,7 +327,7 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
 
     private fun cartao(a: Vod.Achado): Inicio.Cartao {
         val alvo = Alvo(a.titulo, a.serie, a.letra, a.ano)
-        return Inicio.Cartao(a.nomeCompleto, "", a.titulo.take(1).uppercase(), procurarCapa = a.serie,
+        return Inicio.Cartao(a.nomeCompleto, "", a.titulo.take(1).uppercase(), procurarCapa = true,
             nomeDaCapa = a.nomeCompleto, alvo = alvo,
             progresso = if (a.serie) null else Progresso.fracao(this, Progresso.chaveFilme(a.titulo))) {
             lembrar(); FichaActivity.abrir(this, alvo)
@@ -431,19 +343,24 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
     }
 
     /** Sem nada digitado: as buscas recentes, a um OK. */
-    private fun mostrarInicio() {
+    private suspend fun mostrarInicio() {
+        val filas = mutableListOf<Inicio.Fila>()
         val recentes = Preferencias.historicoBusca
-        if (recentes.isEmpty()) {
-            adaptador.trocar(emptyList())
-            estado.visibility = View.VISIBLE
-            estado.text = getString(if (Enderecos.temAlgum) R.string.busca_comece else R.string.vazio_inicio)
-            return
-        }
-        estado.visibility = View.GONE
-        adaptador.trocar(listOf(Inicio.Fila(getString(R.string.busca_recentes), recentes.map { t ->
-            Inicio.Cartao(t, "", t.take(1).uppercase(), subtitulo = null) {
+        if (recentes.isNotEmpty()) filas += Inicio.Fila(getString(R.string.busca_recentes), recentes.map { t ->
+            Inicio.Cartao(t, "", t.take(1).uppercase()) {
                 digitado.clear(); digitado.append(t); atualizar(true)
             }
-        }, Inicio.Tipo.LARGO)))
+        }, Inicio.Tipo.LARGO)
+        val destaque = Destaques.filas(this, somenteLocal = true).firstOrNull { it.itens.isNotEmpty() }
+        if (destaque != null) filas += Inicio.Fila(destaque.titulo, destaque.itens.take(16).map { item ->
+            val alvo = Alvo(item.titulo, item.serie, item.letra, item.ano,
+                colecao = if (item.daColecao) item.colecao else "")
+            Inicio.Cartao(item.titulo, item.capa, item.titulo.take(1), alvo = alvo) {
+                FichaActivity.abrir(this, alvo)
+            }
+        })
+        adaptador.trocar(filas)
+        estado.visibility = if (filas.isEmpty()) View.VISIBLE else View.GONE
+        estado.text = getString(R.string.busca_comece)
     }
 }

@@ -147,6 +147,7 @@ object Inicio {
             val comum = minOf(velhas.size, novas.size)
             for (i in 0 until comum) {
                 val a = velhas[i]; val b = novas[i]
+                if (a === b) continue
                 val igual = a.titulo == b.titulo && a.tipo == b.tipo && a.comFichas == b.comFichas &&
                     a.cartoes.size == b.cartoes.size &&
                     a.cartoes.indices.all { a.cartoes[it].titulo == b.cartoes[it].titulo &&

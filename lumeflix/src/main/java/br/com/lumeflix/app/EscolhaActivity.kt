@@ -183,6 +183,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.getBooleanExtra("lumeflix.focoMenu", false)) MenuGlobal.focar(barraMenu, Aba.INICIO)
         atenderLink(intent)
     }
 
@@ -369,7 +370,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         }
         if (devolver) {
             primeiraVez = false
-            filas.post { focarPrimeiro() }
+            filas.post { if (!MenuGlobal.temFoco(barraMenu)) focarPrimeiro() }
         }
     }
 
