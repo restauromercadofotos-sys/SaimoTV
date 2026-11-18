@@ -135,7 +135,7 @@ object PainelEpisodios {
             adaptador.trocar(r.episodios.filter { it.temporada == temporada }, emptyMap())
             lista.scrollToPosition(indiceDeEntrada())
             escopo.launch {
-                val info = Detalhes.temporada(r.tmdbId, temporada).associateBy { it.numero }
+                val info = Detalhes.dadosDaTemporada(r.tmdbId, temporada, adaptador.itens)
                 if (mostrada == temporada) adaptador.completar(info)
             }
         }
@@ -286,7 +286,7 @@ object PainelEpisodios {
             holder.progresso.visibility = if (fracao != null && fracao < 1f) View.VISIBLE else View.GONE
             fracao?.let { holder.progresso.progress = (it * 1000).toInt() }
             val chave = ep.temporada to ep.numero
-            val url = dados?.imagem ?: miniaturasExtras[chave] ?: reserva.takeIf { respondeu }
+            val url = dados?.imagem ?: miniaturasExtras[chave] ?: reserva
             Cartoes.carregar(holder.imagem, holder.numero, url, aoFalhar = {
                 if (holder.imagem.tag == url) holder.numero.visibility = View.VISIBLE
             })
@@ -296,7 +296,7 @@ object PainelEpisodios {
             if (respondeu && dados?.imagem == null && r.tmdbId > 0 &&
                 consultasIniciadas.add(chave)) {
                 escopo.launch {
-                    val encontrada = Detalhes.imagemEpisodio(r.tmdbId, chave.first, chave.second)
+                    val encontrada = Detalhes.imagemEpisodio(r.tmdbId, chave.first, dados?.numero ?: chave.second)
                     consultasConcluidas.add(chave)
                     if (encontrada != null) miniaturasExtras[chave] = encontrada
                     val pos = itens.indexOfFirst { it.temporada == chave.first && it.numero == chave.second }

@@ -61,15 +61,20 @@ object Titulos {
             get() = Progresso.Endereco(alvo.titulo, alvo.serie, alvo.letra, alvo.ano, alvo.colecao, tmdbId)
     }
 
-    suspend fun resolver(context: Context, alvo: Alvo): Resolvido? {
-        Generos.carregar(context)
+    suspend fun resolver(context: Context, alvo: Alvo, aoLerLocais: (suspend (Resolvido) -> Unit)? = null): Resolvido? {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { resolverNoCatalogo(context, alvo, aoLerLocais) }
+    }
+
+    private suspend fun resolverNoCatalogo(context: Context, alvo: Alvo, aoLerLocais: (suspend (Resolvido) -> Unit)?): Resolvido? {
         if (alvo.colecao.isNotEmpty()) {
             val achado = Vod.colecao(context, alvo.colecao)
                 .firstOrNull { it.titulo.equals(alvo.titulo, ignoreCase = true) } ?: return null
-            val tmdb = alvo.tmdbId.takeIf { it > 0 } ?: achado.tmdbId.toIntOrNull() ?: 0
+            val tmdb = alvo.tmdbId.takeIf { it > 0 } ?: achado.tmdbId.toIntOrNull()?.takeIf { it > 0 }
+                ?: Detalhes.buscarId(achado.titulo, true, achado.ano) ?: 0
             return Resolvido(alvo, Serie(achado.titulo, achado.ano, -1, 0).nomeCompleto, null,
-                agrupar(achado.episodios), tmdb)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { agrupar(achado.episodios) }, tmdb)
         }
+        if (alvo.tmdbId <= 0) Generos.carregar(context)
         val achado = Vod.Achado(alvo.titulo, alvo.serie, alvo.letra, alvo.ano)
         var tmdb = alvo.tmdbId.takeIf { it > 0 } ?: Generos.id(alvo.nomeCompleto, alvo.serie)
             ?: Generos.id(alvo.titulo, alvo.serie) ?: 0
@@ -83,6 +88,7 @@ object Titulos {
             val nome = serie?.nomeCompleto ?: alvo.nomeCompleto
 
             if (tmdb > 0) {
+                if (agrupados.isNotEmpty()) aoLerLocais?.invoke(Resolvido(alvo, nome, null, agrupados, tmdb))
                 val temporadasTmdb = Detalhes.temporadasDaSerie(tmdb)
                 if (temporadasTmdb.isNotEmpty()) {
                     val mapa = agrupados.associateBy { it.temporada to it.numero }.toMutableMap()
@@ -94,15 +100,7 @@ object Titulos {
                         }
                     }
                     val todosEps = mapa.values.sortedWith(compareBy({ it.temporada }, { it.numero }))
-                    val primeiro = todosEps.firstOrNull()
-                    val listaComPrimeiro = if (primeiro != null && primeiro.fontes.isEmpty()) {
-                        val extras = Resolvedor404.fontes(tmdb, serie = true, temporada = primeiro.temporada, numero = primeiro.numero)
-                        if (extras.isNotEmpty()) {
-                            todosEps.map { if (it.temporada == primeiro.temporada && it.numero == primeiro.numero) Ep(it.temporada, it.numero, extras) else it }
-                        } else todosEps
-                    } else todosEps
-
-                    return Resolvido(alvo, nome, null, listaComPrimeiro, tmdb)
+                    return Resolvido(alvo, nome, null, todosEps, tmdb)
                 }
             }
 

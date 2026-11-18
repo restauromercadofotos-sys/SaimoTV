@@ -326,7 +326,7 @@ object Detalhes {
             synchronized(imagensDeEpisodios) { imagensDeEpisodios[chave] }
                 ?.let { return@withContext it }
             val json = consultasDeImagens.withPermit {
-                pedir("$BASE/tv/$id/season/$temporada/episode/$numero/images?api_key=$CHAVE&include_image_language=pt,en,null")
+                pedir("$BASE/tv/$id/season/$temporada/episode/$numero/images?api_key=$CHAVE")
             } ?: return@withContext null
             val stills = json.optJSONArray("stills") ?: return@withContext null
             val caminho = (0 until stills.length()).firstNotNullOfOrNull { i ->
@@ -339,13 +339,27 @@ object Detalhes {
         }
 
     /** Os episódios de uma temporada, para a lista da ficha ter nome e imagem. */
+    /** Relaciona a numeração absoluta à temporada quando as duas sequências completas coincidem. */
+    suspend fun dadosDaTemporada(id: Int, temporada: Int, locais: List<Titulos.Ep>): Map<Int, EpisodioTmdb> {
+        val dados = Detalhes.temporada(id, temporada).associateBy { it.numero }
+        if (dados.isEmpty() || temporada <= 1 || locais.size != dados.size) return dados
+        val numeros = locais.map { it.numero }.sorted()
+        if (numeros.first() <= 1 || numeros.first() in dados) return dados
+        val resumo = temporadasDaSerie(id)
+        val anteriores = resumo.filter { it.temporada in 1 until temporada }
+        if (anteriores.size != temporada - 1) return dados
+        val deslocamento = anteriores.sumOf { it.totalEpisodios }
+        if (!numeros.withIndex().all { (i, n) -> n == deslocamento + i + 1 && i + 1 in dados }) return dados
+        return dados.mapKeys { (numero, _) -> numero + deslocamento }
+    }
+
     suspend fun temporada(id: Int, numero: Int): List<EpisodioTmdb> = withContext(Dispatchers.IO) {
         if (id <= 0) return@withContext emptyList()
         val chave = "$id|$numero"
         synchronized(temporadas) { temporadas[chave] }?.let { return@withContext it }
-        val json = pedir("$BASE/tv/$id/season/$numero?api_key=$CHAVE&language=pt-BR")
-            ?: return@withContext emptyList()
-        val lista = json.optJSONArray("episodes") ?: return@withContext emptyList()
+        val rota = "$BASE/tv/$id/season/$numero?api_key=$CHAVE"
+        val lista = pedir("$rota&language=pt-BR")?.optJSONArray("episodes")?.takeIf { it.length() > 0 }
+            ?: pedir(rota)?.optJSONArray("episodes") ?: return@withContext emptyList()
         val out = (0 until lista.length()).mapNotNull { i ->
             val ep = lista.optJSONObject(i) ?: return@mapNotNull null
             EpisodioTmdb(
@@ -358,7 +372,7 @@ object Detalhes {
                 duracao = ep.optInt("runtime").takeIf { it > 0 },
             )
         }
-        synchronized(temporadas) { temporadas[chave] = out }
+        if (out.isNotEmpty()) synchronized(temporadas) { temporadas[chave] = out }
         if (out.isNotEmpty() && out.none { it.imagem != null }) {
             Log.i("LumeFlix-TMDB", "Temporada $numero de série $id sem still_path; consultando /images só para cartões visíveis")
         }

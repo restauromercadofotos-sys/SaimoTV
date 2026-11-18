@@ -353,10 +353,15 @@ object Vod {
             ?: series(context, achado.letra, fresco = true).firstOrNull(igual)
     }
 
+    private data class EpisodiosLidos(val texto: String, val episodios: List<Episodio>)
+    private val ultimosEpisodios = android.util.LruCache<Triple<String, String, String>, EpisodiosLidos>(3)
+
     /** Episódios de uma série. Baixa só o pedaço em que ela está. */
     suspend fun episodios(context: Context, letra: String, serie: Serie): List<Episodio> {
         val nome = "series-${gaveta(letra)}-${serie.pedaco}.txt"
         val texto = arquivo(context, nome) ?: return emptyList()
+        val chave = Triple(nome, serie.titulo, serie.ano)
+        ultimosEpisodios.get(chave)?.takeIf { it.texto == texto }?.let { return it.episodios }
         val out = mutableListOf<Episodio>()
         var dentro = false
         for (linha in texto.lineSequence()) {
@@ -379,6 +384,7 @@ object Vod {
                 campos[2],
                 urls)
         }
+        if (out.isNotEmpty()) ultimosEpisodios.put(chave, EpisodiosLidos(texto, out))
         return out
     }
 
@@ -442,6 +448,7 @@ object Vod {
         indice = null
         porTitulo = null
         colecoes.clear()
+        ultimosEpisodios.evictAll()
     }
 
     /** Animes e doramas que batem com o termo — eles não estão no índice de busca. */

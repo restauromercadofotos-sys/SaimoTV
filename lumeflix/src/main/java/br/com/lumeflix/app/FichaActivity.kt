@@ -201,12 +201,27 @@ class FichaActivity : TelaComMenu() {
     /** Onde o título mora e o que tem para tocar: versões, temporadas, episódios. */
     private fun resolver() {
         lifecycleScope.launch(semDerrubar) {
-            val r = Titulos.resolver(this@FichaActivity, alvo) ?: return@launch
+            val r = Titulos.resolver(this@FichaActivity, alvo) { local ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                    if (!isFinishing && !isDestroyed) {
+                        resolvido = local
+                        episodios.tmdbId = local.tmdbId
+                        atualizarAssistir()
+                        montarTemporadas(local)
+                    }
+                }
+            } ?: return@launch
             if (isFinishing || isDestroyed) return@launch
+            val anterior = resolvido
             resolvido = r
             episodios.tmdbId = r.tmdbId
             atualizarAssistir()
-            val versoes = r.filme?.fontes?.keys ?: r.episodios.flatMap { it.versoes }.toSet()
+            if (r.serie && anterior?.episodios != r.episodios) {
+                montarTemporadas(r)
+            }
+            val versoes = r.filme?.fontes?.keys ?: kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                r.episodios.flatMapTo(mutableSetOf<String>()) { it.versoes }
+            }
             if (versoes.size > 1) {
                 findViewById<TextView>(R.id.fichaVersao).apply {
                     visibility = View.VISIBLE
@@ -215,7 +230,6 @@ class FichaActivity : TelaComMenu() {
                     setOnClickListener { escolherVersao(versoes) }
                 }
             }
-            if (r.serie) montarTemporadas(r)
             carregarExtras(r)
         }
     }
@@ -248,7 +262,8 @@ class FichaActivity : TelaComMenu() {
         findViewById<View>(R.id.fichaEpisodiosBloco).visibility = View.VISIBLE
         val barra = findViewById<LinearLayout>(R.id.fichaTemporadas)
         barra.removeAllViews()
-        val atual = Titulos.ondeContinuar(this, r)?.temporada ?: temporadas.first()
+        val atual = temporadaVista.takeIf { it in temporadas } ?: Titulos.ondeContinuar(this, r)?.temporada ?: temporadas.first()
+        temporadaVista = 0
         for (t in temporadas) {
             barra.addView(TextView(this).apply {
                 id = View.generateViewId()
@@ -295,7 +310,7 @@ class FichaActivity : TelaComMenu() {
         val indice = lista.indexOfFirst { it == atual }.coerceAtLeast(0)
         findViewById<RecyclerView>(R.id.fichaEpisodios).scrollToPosition(indice)
         lifecycleScope.launch(semDerrubar) {
-            val info = Detalhes.temporada(r.tmdbId, temporada).associateBy { it.numero }
+            val info = Detalhes.dadosDaTemporada(r.tmdbId, temporada, lista)
             if (temporadaVista == temporada) episodios.completar(info)
         }
     }
@@ -655,7 +670,7 @@ private class EpisodiosAdapter(
             consultasIniciadas.add(chave)) {
             val idConsultado = tmdbId
             escopo.launch(semDerrubar) {
-                val encontrada = Detalhes.imagemEpisodio(idConsultado, chave.first, chave.second)
+                val encontrada = Detalhes.imagemEpisodio(idConsultado, chave.first, dados?.numero ?: chave.second)
                 if (tmdbId != idConsultado) return@launch
                 consultasConcluidas.add(chave)
                 if (encontrada != null) miniaturasExtras[chave] = encontrada
