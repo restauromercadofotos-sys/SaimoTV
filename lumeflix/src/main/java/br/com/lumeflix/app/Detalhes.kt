@@ -339,6 +339,20 @@ object Detalhes {
         }
 
     /** Os episódios de uma temporada, para a lista da ficha ter nome e imagem. */
+    /** Relaciona a numeração absoluta à temporada quando as duas sequências completas coincidem. */
+    suspend fun dadosDaTemporada(id: Int, temporada: Int, locais: List<Titulos.Ep>): Map<Int, EpisodioTmdb> {
+        val dados = Detalhes.temporada(id, temporada).associateBy { it.numero }
+        if (dados.isEmpty() || temporada <= 1 || locais.size != dados.size) return dados
+        val numeros = locais.map { it.numero }.sorted()
+        if (numeros.first() <= 1 || numeros.first() in dados) return dados
+        val resumo = temporadasDaSerie(id)
+        val anteriores = resumo.filter { it.temporada in 1 until temporada }
+        if (anteriores.size != temporada - 1) return dados
+        val deslocamento = anteriores.sumOf { it.totalEpisodios }
+        if (!numeros.withIndex().all { (i, n) -> n == deslocamento + i + 1 && i + 1 in dados }) return dados
+        return dados.mapKeys { (numero, _) -> numero + deslocamento }
+    }
+
     suspend fun temporada(id: Int, numero: Int): List<EpisodioTmdb> = withContext(Dispatchers.IO) {
         if (id <= 0) return@withContext emptyList()
         val chave = "$id|$numero"
