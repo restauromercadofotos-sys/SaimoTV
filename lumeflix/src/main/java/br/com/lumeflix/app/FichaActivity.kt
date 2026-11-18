@@ -295,7 +295,7 @@ class FichaActivity : TelaComMenu() {
         val indice = lista.indexOfFirst { it == atual }.coerceAtLeast(0)
         findViewById<RecyclerView>(R.id.fichaEpisodios).scrollToPosition(indice)
         lifecycleScope.launch(semDerrubar) {
-            val info = Detalhes.temporada(r.tmdbId, temporada).associateBy { it.numero }
+            val info = Detalhes.dadosDaTemporada(r.tmdbId, temporada, lista)
             if (temporadaVista == temporada) episodios.completar(info)
         }
     }
@@ -655,7 +655,7 @@ private class EpisodiosAdapter(
             consultasIniciadas.add(chave)) {
             val idConsultado = tmdbId
             escopo.launch(semDerrubar) {
-                val encontrada = Detalhes.imagemEpisodio(idConsultado, chave.first, chave.second)
+                val encontrada = Detalhes.imagemEpisodio(idConsultado, chave.first, dados?.numero ?: chave.second)
                 if (tmdbId != idConsultado) return@launch
                 consultasConcluidas.add(chave)
                 if (encontrada != null) miniaturasExtras[chave] = encontrada
