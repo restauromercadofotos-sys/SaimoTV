@@ -62,6 +62,10 @@ object Titulos {
     }
 
     suspend fun resolver(context: Context, alvo: Alvo): Resolvido? {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { resolverNoCatalogo(context, alvo) }
+    }
+
+    private suspend fun resolverNoCatalogo(context: Context, alvo: Alvo): Resolvido? {
         if (alvo.colecao.isNotEmpty()) {
             val achado = Vod.colecao(context, alvo.colecao)
                 .firstOrNull { it.titulo.equals(alvo.titulo, ignoreCase = true) } ?: return null
@@ -70,7 +74,7 @@ object Titulos {
             return Resolvido(alvo, Serie(achado.titulo, achado.ano, -1, 0).nomeCompleto, null,
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { agrupar(achado.episodios) }, tmdb)
         }
-        Generos.carregar(context)
+        if (alvo.tmdbId <= 0) Generos.carregar(context)
         val achado = Vod.Achado(alvo.titulo, alvo.serie, alvo.letra, alvo.ano)
         var tmdb = alvo.tmdbId.takeIf { it > 0 } ?: Generos.id(alvo.nomeCompleto, alvo.serie)
             ?: Generos.id(alvo.titulo, alvo.serie) ?: 0
