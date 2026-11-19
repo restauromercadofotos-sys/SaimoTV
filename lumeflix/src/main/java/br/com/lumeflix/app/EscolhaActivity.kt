@@ -365,7 +365,8 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         if (topo.isNotEmpty()) mostrarFilas(topo + lista.filterNot { it.titulo in grupos })
     }
 
-    private fun mostrarFilas(lista: List<Inicio.Fila>) {
+    private fun mostrarFilas(filasRecebidas: List<Inicio.Fila>) {
+        val lista = Inicio.organizarCatalogo(filasRecebidas, getString(R.string.vod_continuar))
         if (isFinishing || isDestroyed) return
         if (lista.isEmpty()) {
             mostrarVazio(getString(if (Enderecos.temAlgum || MinhasListas.todas().isNotEmpty()) R.string.vazio_falhou else R.string.vazio_inicio))

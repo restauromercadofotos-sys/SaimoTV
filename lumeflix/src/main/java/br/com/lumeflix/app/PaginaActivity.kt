@@ -299,7 +299,7 @@ open class PaginaActivity : TelaComMenu() {
 
     private fun mostrar(lista: List<Inicio.Fila>) {
         if (isFinishing || isDestroyed) return
-        adaptador.trocar(lista.map { fila ->
+        adaptador.trocar(Inicio.organizarCatalogo(lista, getString(R.string.vod_continuar)).map { fila ->
             if (fila.titulo in indicePorGenero) return@map fila
             fila.copy(cartoes = fila.cartoes.distinctBy { cartao ->
                 val alvo = cartao.alvo

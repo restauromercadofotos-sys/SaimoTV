@@ -115,6 +115,24 @@ object Inicio {
         val comFichas: Boolean = Generos.prontos,
     )
 
+    private val seriesNovas = Regex("""series novas(?: de)?(?: \d{4})?""")
+
+    fun organizarCatalogo(filas: List<Fila>, nomeContinuar: String): List<Fila> {
+        val disponiveis = filas.filter { it.cartoes.isNotEmpty() }
+        val nomes = disponiveis.map { Vod.normalizar(it.titulo) }.toSet()
+        val continuar = disponiveis.firstOrNull { it.titulo == nomeContinuar }
+        val vistos = mutableSetOf<String>()
+        val resultado = disponiveis.filter { fila ->
+            val nome = Vod.normalizar(fila.titulo)
+            fila.titulo != nomeContinuar &&
+                !("em alta hoje" in nomes && nome in setOf("em alta", "series em alta", "filmes em alta")) &&
+                !("novas series" in nomes && seriesNovas.matches(nome)) &&
+                vistos.add(nome)
+        }.toMutableList()
+        if (continuar != null) resultado.add(minOf(1, resultado.size), continuar)
+        return resultado
+    }
+
     class Adapter(
         private val escopo: kotlinx.coroutines.CoroutineScope? = null,
         private val capaDe: (suspend (String, Boolean) -> String?)? = null,

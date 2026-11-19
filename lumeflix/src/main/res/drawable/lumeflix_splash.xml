@@ -6,6 +6,6 @@
             <solid android:color="#080808"/>
         </shape>
     </item>
-    <item android:drawable="@drawable/lumeflix_splash_wordmark"
-        android:gravity="center" />
+    <item android:drawable="@drawable/lumeflix_wordmark"
+        android:width="360dp" android:height="78dp" android:gravity="center" />
 </layer-list>
