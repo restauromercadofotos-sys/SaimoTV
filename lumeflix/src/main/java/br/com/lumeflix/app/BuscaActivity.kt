@@ -304,7 +304,7 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
                             FichaActivity.abrir(this@BuscaActivity, alvo)
                         }
                     }
-                    if (descobertas.isNotEmpty()) filas += Inicio.Fila("Descobertas no TMDB", descobertas)
+                    if (descobertas.isNotEmpty()) filas += Inicio.Fila("Descobertas", descobertas)
                     mostrar(filas, termo)
                 }
             }

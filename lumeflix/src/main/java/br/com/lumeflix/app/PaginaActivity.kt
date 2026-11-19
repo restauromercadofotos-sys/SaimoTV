@@ -76,11 +76,10 @@ open class PaginaActivity : TelaComMenu() {
             }, paisagem = true)
     }
     private lateinit var destaque: Destaque
-    private lateinit var seletorGeneros: TextView
+    private var montagem: kotlinx.coroutines.Job? = null
     private var montou = false
     /** Posição de cada fileira para o seletor de gêneros saltar sem outra tela. */
     private val indicePorGenero = linkedMapOf<String, Int>()
-    private var generosDaPagina: List<String> = emptyList()
     /// Os cartões das categorias do topo; o "Explorar" do fim usa o mesmo desenho.
     private var categoriasProntas: Inicio.Fila? = null
 
@@ -108,18 +107,22 @@ open class PaginaActivity : TelaComMenu() {
             text = nome
             visibility = android.view.View.VISIBLE
         }
-        seletorGeneros = findViewById<TextView>(R.id.paginaGeneros).apply {
+        findViewById<TextView>(R.id.paginaGeneros).apply {
             visibility = if (todos) android.view.View.GONE else android.view.View.VISIBLE
-            setOnClickListener { abrirSeletorGeneros() }
+            setText(R.string.pagina_todos_az)
+            contentDescription = text
+            setOnClickListener { GradeActivity.abrir(this@PaginaActivity, tipo) }
         }
         destaque.padrao(nome, getString(R.string.vod_carregando))
-        lifecycleScope.launch(semDerrubar) { montar() }
+        montagem?.cancel()
+        montagem = lifecycleScope.launch(semDerrubar) { montar() }
     }
 
     override fun onRestart() {
         super.onRestart()
         // O "continuar" deste tipo muda depois de assistir.
-        lifecycleScope.launch(semDerrubar) { montar() }
+        montagem?.cancel()
+        montagem = lifecycleScope.launch(semDerrubar) { montar() }
     }
 
     private data class Candidato(val alvo: Alvo, val ano: Int, val capa: String, val generos: Int)
@@ -176,13 +179,15 @@ open class PaginaActivity : TelaComMenu() {
         if (todos) montarTodos(lista) else montarTipo(lista)
         mostrar(lista)
         if (!todos && !colecao) {
-            val ranking = Detalhes.emAlta(this, serie)
-            if (ranking.isNotEmpty()) {
-                lista += Inicio.Fila("Em alta hoje no TMDB · Top ${ranking.size}", ranking.map {
-                    cartao(Alvo(it.titulo, it.serie, it.letra, it.ano), Generos.capa(it.nomeCompleto, serie).orEmpty())
-                })
-                mostrar(lista)
+            val editoriais = Detalhes.fileirasEditoriais(this, serie)
+            for ((nome, titulos) in editoriais) {
+                if (lista.none { it.titulo.equals(nome, ignoreCase = true) }) {
+                    lista += Inicio.Fila(nome, titulos.map {
+                        cartao(Alvo(it.titulo, it.serie, it.letra, it.ano), Generos.capa(it.nomeCompleto, serie).orEmpty())
+                    })
+                }
             }
+            if (editoriais.isNotEmpty()) mostrar(lista)
         }
     }
 
@@ -208,9 +213,6 @@ open class PaginaActivity : TelaComMenu() {
         indicePorGenero.clear()
         lancamentos(indice.candidatos)?.let { lista += Inicio.Fila(getString(R.string.pagina_lancamentos), it) }
         val porGenero = indice.fileiras
-        // Apenas gêneros com fileiras reais entram no seletor: evita
-        // escolher um gênero e não acontecer nada.
-        generosDaPagina = porGenero.map { it.first }
         for ((g, itens) in porGenero) {
             indicePorGenero[g] = lista.size
             lista += Inicio.Fila(g, object : AbstractList<Inicio.Cartao>() {
@@ -218,35 +220,6 @@ open class PaginaActivity : TelaComMenu() {
                 override fun get(index: Int) = itens[index].let { cartao(it.alvo, it.capa) }
             })
         }
-    }
-
-    /**
-     * Seletor no padrão de TV: abre com OK, escolhe com o direcional e leva o
-     * foco diretamente à fileira, sem trocar de tela nem perder a posição.
-     */
-    private fun abrirSeletorGeneros() {
-        val itens = listOf(Painel.Item("Todos") { focarFileira(0) }) +
-            generosDaPagina.map { genero ->
-                Painel.Item(genero) { indicePorGenero[genero]?.let(::focarFileira) }
-            } +
-            listOf(Painel.Item(getString(R.string.pagina_todos_az)) {
-                GradeActivity.abrir(this, tipo)
-            })
-        Painel.mostrar(this, "Gêneros", itens)
-    }
-
-    private fun focarFileira(posicao: Int) {
-        if (posicao !in 0 until (filas.adapter?.itemCount ?: 0)) return
-        filas.scrollToPosition(posicao)
-        fun tentar(restantes: Int) {
-            val linha = filas.findViewHolderForAdapterPosition(posicao)?.itemView
-            val horizontal = linha?.findViewById<RecyclerView>(R.id.filaCapas)
-            val primeiro = horizontal?.findViewHolderForAdapterPosition(0)?.itemView
-            if (primeiro?.requestFocus() == true || restantes <= 0) return
-            horizontal?.scrollToPosition(0)
-            filas.postDelayed({ tentar(restantes - 1) }, 45)
-        }
-        filas.post { tentar(8) }
     }
 
     /**
@@ -370,7 +343,7 @@ open class PaginaActivity : TelaComMenu() {
         return candidatos.asSequence()
             .filter { it.generos and bit != 0 }
             .toList()
-            .takeIf { it.size >= 6 }
+            .takeIf { it.isNotEmpty() }
     }
 
     /** Só títulos com capa: fileira de gênero cheia de quadrados vazios não convida ninguém. */

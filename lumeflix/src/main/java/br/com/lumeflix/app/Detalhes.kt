@@ -513,26 +513,59 @@ object Detalhes {
         val capa: String?,
     )
 
-    suspend fun emAlta(context: Context, serie: Boolean): List<Vod.Achado> = withContext(Dispatchers.IO) {
-        val tipo = if (serie) "tv" else "movie"
-        val dia = System.currentTimeMillis() / 86_400_000L
-        val cache = context.getSharedPreferences("tmdb_tendencias", Context.MODE_PRIVATE)
-        val ids = if (cache.getLong("$tipo.dia", -1) == dia) {
-            cache.getString(tipo, "").orEmpty().split(',').mapNotNull { it.toIntOrNull() }
-        } else {
-            val itens = pedir("$BASE/trending/$tipo/day?api_key=$CHAVE&language=pt-BR")
-                ?.optJSONArray("results") ?: return@withContext emptyList()
-            (0 until itens.length()).mapNotNull { itens.optJSONObject(it)?.optInt("id")?.takeIf { id -> id > 0 } }
-                .also { cache.edit().putLong("$tipo.dia", dia).putString(tipo, it.joinToString(",")).apply() }
+    suspend fun fileirasEditoriais(context: Context, serie: Boolean): List<Pair<String, List<Vod.Achado>>> =
+        withContext(Dispatchers.IO) {
+            val tipo = if (serie) "tv" else "movie"
+            val agora = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+            val formato = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply { timeZone = agora.timeZone }
+            val hoje = formato.format(agora.time)
+            agora.add(java.util.Calendar.DAY_OF_YEAR, -90)
+            val inicio = formato.format(agora.time)
+            val cache = context.getSharedPreferences("fileiras_editoriais", Context.MODE_PRIVATE)
+            val saida = mutableListOf<Pair<String, List<Vod.Achado>>>()
+
+            suspend fun incluir(nome: String, ids: List<Int>, limite: Int = 20) {
+                val titulos = mutableListOf<Vod.Achado>()
+                for (id in ids.distinct()) {
+                    val titulo = Generos.titulo(id, serie) ?: continue
+                    Vod.achar(context, titulo, serie)?.let(titulos::add)
+                    if (titulos.size == limite) break
+                }
+                if (titulos.isNotEmpty()) saida += nome to titulos
+            }
+
+            suspend fun consultar(nome: String, rota: String, parametros: String = "", limite: Int = 20) {
+                val chave = "$tipo.$nome"
+                val anteriores = cache.getString(chave, "").orEmpty().split(',').mapNotNull(String::toIntOrNull)
+                val ids = if (cache.getString("$chave.data", "") == hoje) anteriores else {
+                    val itens = pedir("$BASE/$rota?api_key=$CHAVE&language=pt-BR$parametros")?.optJSONArray("results")
+                    if (itens == null) {
+                        // Uma tendência antiga não deve aparecer como sendo de hoje.
+                        if (rota.startsWith("trending/") || rota.endsWith("on_the_air")) emptyList() else anteriores
+                    } else (0 until itens.length()).mapNotNull { itens.optJSONObject(it)?.optInt("id")?.takeIf { id -> id > 0 } }
+                        .also { cache.edit().putString("$chave.data", hoje).putString(chave, it.joinToString(",")).apply() }
+                }
+                incluir(nome, ids, limite)
+            }
+
+            consultar("Em alta hoje", "trending/$tipo/day", limite = 10)
+            if (serie) {
+                consultar("Novas séries", "discover/tv", "&first_air_date.gte=$inicio&first_air_date.lte=$hoje&sort_by=popularity.desc")
+                consultar("Séries no ar nesta semana", "tv/on_the_air", "&timezone=America%2FSao_Paulo")
+            }
+            val datas = if (serie) "first_air_date" else "primary_release_date"
+            consultar("Lançamentos no streaming", "discover/$tipo",
+                "&watch_region=BR&with_watch_monetization_types=flatrate&$datas.gte=$inicio&$datas.lte=$hoje&sort_by=popularity.desc")
+            consultar(if (serie) "Séries mais bem avaliadas" else "Filmes mais bem avaliados", "$tipo/top_rated")
+            if (!serie) {
+                // Vencedores de melhor filme, cerimônias de 2011 a 2026 (oscars.org/oscars/ceremonies).
+                incluir("Vencedores do Oscar de melhor filme", listOf(1054867, 1064213, 872585, 545611, 776503, 581734,
+                    496243, 490132, 399055, 376867, 314365, 194662, 76203, 68734, 74643, 45269))
+                // Os dez primeiros da votação de críticos Sight and Sound 2022 (BFI).
+                incluir("Aclamados pela crítica", listOf(44012, 426, 15, 18148, 843, 62, 14626, 1018, 26317, 872))
+            }
+            saida
         }
-        val encontrados = mutableListOf<Vod.Achado>()
-        for (id in ids) {
-            val nome = Generos.titulo(id, serie) ?: continue
-            Vod.achar(context, nome, serie)?.let(encontrados::add)
-            if (encontrados.size == 10) break
-        }
-        encontrados
-    }
 
     suspend fun buscarTitulos(termo: String): List<TituloTmdb> = withContext(Dispatchers.IO) {
         val limpo = termo.trim()
