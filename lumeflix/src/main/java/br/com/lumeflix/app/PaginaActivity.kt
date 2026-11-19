@@ -107,12 +107,6 @@ open class PaginaActivity : TelaComMenu() {
             text = nome
             visibility = android.view.View.VISIBLE
         }
-        findViewById<TextView>(R.id.paginaGeneros).apply {
-            visibility = if (todos) android.view.View.GONE else android.view.View.VISIBLE
-            setText(R.string.pagina_todos_az)
-            contentDescription = text
-            setOnClickListener { GradeActivity.abrir(this@PaginaActivity, tipo) }
-        }
         destaque.padrao(nome, getString(R.string.vod_carregando))
         montagem?.cancel()
         montagem = lifecycleScope.launch(semDerrubar) { montar() }
@@ -129,7 +123,7 @@ open class PaginaActivity : TelaComMenu() {
 
     private class IndiceDeFilas(
         val entradas: List<Vod.Entrada>, val generos: List<String>,
-        val candidatos: List<Candidato>, val fileiras: List<Pair<String, List<Candidato>>>
+        val fileiras: List<Pair<String, List<Candidato>>>
     )
 
     /** A letra de cada tipo em destaques.txt. */
@@ -164,30 +158,24 @@ open class PaginaActivity : TelaComMenu() {
         continuar()?.let { lista += it }
 
         // As fileiras do repositório: no On Demand todas, numa página só as do tipo dela.
-        for (fila in destaques) {
+        for (fila in destaques.filterNot { Destaques.lancamentoGenerico(it.titulo) }) {
             val itens = if (todos) fila.itens else fila.itens.filter { it.tipo == letraDe(tipo) }
             if (itens.size >= 4) lista += Inicio.Fila(fila.titulo, itens.map { item ->
                 cartao(Alvo(item.titulo, item.serie, item.letra, item.ano,
                     colecao = if (item.daColecao) item.colecao else ""), item.capa, item.trailer)
             })
         }
-        // O catálogo completo com filtros já é acessível pelo seletor "Gêneros".
-        // Não se deve criar uma fileira de um cartão sem arte, que ainda
-        // alterava o destaque para "Todos, com filtros" ao receber foco.
-        if (!montou) mostrar(lista)
-
+        if (!montou && lista.isNotEmpty()) mostrar(lista)
         if (todos) montarTodos(lista) else montarTipo(lista)
         mostrar(lista)
         if (!todos && !colecao) {
-            val editoriais = Detalhes.fileirasEditoriais(this, serie)
-            for ((nome, titulos) in editoriais) {
-                if (lista.none { it.titulo.equals(nome, ignoreCase = true) }) {
-                    lista += Inicio.Fila(nome, titulos.map {
-                        cartao(Alvo(it.titulo, it.serie, it.letra, it.ano), Generos.capa(it.nomeCompleto, serie).orEmpty())
-                    })
-                }
+            val editoriais = Detalhes.fileirasEditoriais(this, serie).map { (nome, titulos) ->
+                Inicio.Fila(nome, titulos.map {
+                    cartao(Alvo(it.titulo, it.serie, it.letra, it.ano), Generos.capa(it.nomeCompleto, serie).orEmpty())
+                })
             }
-            if (editoriais.isNotEmpty()) mostrar(lista)
+            lista.removeAll { fila -> editoriais.any { it.titulo.equals(fila.titulo, ignoreCase = true) } }
+            if (editoriais.isNotEmpty()) mostrar(editoriais + lista)
         }
     }
 
@@ -206,12 +194,11 @@ open class PaginaActivity : TelaComMenu() {
                     ?: Pair(Generos.semAno(item.alvo.titulo).lowercase(Locale.ROOT), item.ano) }
             val generos = nomes.sortedBy { g -> ORDEM_GENEROS.indexOf(g).let { if (it < 0) 99 else it } }
             val fileiras = generos.mapNotNull { g -> porGenero(candidatos, g)?.let { g to it } }
-            IndiceDeFilas(entradas, nomes, candidatos, fileiras).also {
+            IndiceDeFilas(entradas, nomes, fileiras).also {
                 if (!colecao && fileiras.isNotEmpty()) indicesRecentes.put(tipo, it)
             }
         }
         indicePorGenero.clear()
-        lancamentos(indice.candidatos)?.let { lista += Inicio.Fila(getString(R.string.pagina_lancamentos), it) }
         val porGenero = indice.fileiras
         for ((g, itens) in porGenero) {
             indicePorGenero[g] = lista.size
@@ -312,8 +299,8 @@ open class PaginaActivity : TelaComMenu() {
 
     private fun mostrar(lista: List<Inicio.Fila>) {
         if (isFinishing || isDestroyed) return
-        adaptador.trocar(lista.mapIndexed { index, fila ->
-            if (index in indicePorGenero.values) return@mapIndexed fila
+        adaptador.trocar(lista.map { fila ->
+            if (fila.titulo in indicePorGenero) return@map fila
             fila.copy(cartoes = fila.cartoes.distinctBy { cartao ->
                 val alvo = cartao.alvo
                 val id = alvo?.tmdbId?.takeIf { it > 0 }
@@ -331,12 +318,6 @@ open class PaginaActivity : TelaComMenu() {
         }
     }
 
-    private val esteAno get() = Calendar.getInstance().get(Calendar.YEAR)
-
-    /** Do ano passado para cá, o mais novo primeiro. */
-    private fun lancamentos(candidatos: List<Candidato>): List<Inicio.Cartao>? =
-        candidatos.filter { it.ano >= esteAno - 1 }.sortedByDescending { it.ano }.take(30)
-            .takeIf { it.size >= 4 }?.map { cartao(it.alvo, it.capa) }
 
     private fun porGenero(candidatos: List<Candidato>, genero: String): List<Candidato>? {
         val bit = Generos.bit(genero)
@@ -350,14 +331,14 @@ open class PaginaActivity : TelaComMenu() {
     private suspend fun daColecao(colecaoTipo: String): List<Candidato> =
         Vod.colecao(this, colecaoTipo).mapNotNull { c ->
             val alvo = Alvo(c.titulo, true, "", c.ano, colecaoTipo, c.tmdbId.toIntOrNull() ?: 0)
-            val capa = Generos.capa(c.titulo, true) ?: return@mapNotNull null
+            val capa = Generos.capa(c.titulo, true).orEmpty()
             Candidato(alvo, anoDe(c.titulo, c.ano), capa, Generos.bits(c.titulo, true))
         }
 
     private suspend fun doAcervo(serie: Boolean): List<Candidato> =
         Vod.entradas(this).asSequence().filter { it.serie == serie }.mapNotNull { e ->
             val a = e.achado
-            val capa = Generos.capa(a.titulo, a.serie) ?: return@mapNotNull null
+            val capa = Generos.capa(a.titulo, a.serie).orEmpty()
             Candidato(Alvo(a.titulo, a.serie, a.letra, a.ano), anoDe(a.titulo, a.ano), capa, Generos.bits(a.titulo, a.serie))
         }.toList()
 

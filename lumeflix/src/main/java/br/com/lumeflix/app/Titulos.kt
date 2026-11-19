@@ -47,15 +47,13 @@ object Titulos {
         fun episodio(temporada: Int, numero: Int) =
             episodios.firstOrNull { it.temporada == temporada && it.numero == numero }
 
-        fun seguinte(ep: Ep): Ep? {
-            val i = episodios.indexOf(ep)
-            return if (i < 0) null else episodios.getOrNull(i + 1)
-        }
+        fun seguinte(ep: Ep): Ep? = episodios.asSequence()
+            .filter { it.temporada > ep.temporada || (it.temporada == ep.temporada && it.numero > ep.numero) }
+            .minWithOrNull(compareBy({ it.temporada }, { it.numero }))
 
-        fun anterior(ep: Ep): Ep? {
-            val i = episodios.indexOf(ep)
-            return if (i <= 0) null else episodios.getOrNull(i - 1)
-        }
+        fun anterior(ep: Ep): Ep? = episodios.asSequence()
+            .filter { it.temporada < ep.temporada || (it.temporada == ep.temporada && it.numero < ep.numero) }
+            .maxWithOrNull(compareBy({ it.temporada }, { it.numero }))
 
         val endereco: Progresso.Endereco
             get() = Progresso.Endereco(alvo.titulo, alvo.serie, alvo.letra, alvo.ano, alvo.colecao, tmdbId)

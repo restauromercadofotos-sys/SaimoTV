@@ -147,7 +147,7 @@ object Connect {
         val finalTitle = title ?: pTitle ?: (if (!key.startsWith("saimo|") && key.isNotBlank()) key else "Vídeo")
         val finalLetter = (letter ?: pLetter).orEmpty()
         val finalYear = (year ?: pYear).orEmpty()
-        val finalSeries = isSeries ?: pSeries ?: ((temp ?: 0) > 0)
+        val finalSeries = ((temp ?: 0) > 0 && (ep ?: 0) > 0) || (isSeries ?: pSeries ?: ((temp ?: 0) > 0))
 
         val act = LumeFlixApp.atividadeAtual
         val targetAct = act ?: context
@@ -155,7 +155,7 @@ object Connect {
         CoroutineScope(Dispatchers.Main).launch {
             val achado = Vod.achar(targetAct, finalTitle, finalSeries)
                 ?: (if (finalYear.isNotBlank()) Vod.achar(targetAct, "$finalTitle ($finalYear)", finalSeries) else null)
-                ?: Vod.buscar(targetAct, finalTitle, 5).firstOrNull()
+                ?: Vod.buscar(targetAct, finalTitle, 5).firstOrNull { it.serie == finalSeries && Vod.normalizar(Generos.semAno(it.titulo)) == Vod.normalizar(Generos.semAno(finalTitle)) }
 
             val alvo = if (achado != null) {
                 Alvo(achado.titulo, achado.serie, achado.letra, achado.ano)

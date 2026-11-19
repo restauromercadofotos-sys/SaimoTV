@@ -335,7 +335,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         // ler as fichas (3,7 MB) leva até 2 s num TV Box lento, e a tela
         // ficava vazia esse tempo todo. As capas dos destaques chegam depois.
         if (!Generos.prontos) {
-            val locais = listOfNotNull(continuar(), favoritos()) + Destaques.filas(this, somenteLocal = true).map { fila ->
+            val locais = listOfNotNull(continuar(), favoritos()) + Destaques.filas(this, somenteLocal = true).filterNot { Destaques.lancamentoGenerico(it.titulo) }.map { fila ->
                 Inicio.Fila(fila.titulo, fila.itens.map { cartaoDe(it) })
             }
             if (locais.isNotEmpty()) mostrarFilas(locais)
@@ -345,11 +345,24 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         continuar()?.let { lista += it }
         aoVivo()?.let { lista += it }
         favoritos()?.let { lista += it }
-        for (fila in Destaques.filas(this)) {
+        for (fila in Destaques.filas(this).filterNot { Destaques.lancamentoGenerico(it.titulo) }) {
             val cartoes = fila.itens.map { cartaoDe(it) }
             if (cartoes.isNotEmpty()) lista += Inicio.Fila(fila.titulo, cartoes)
         }
         mostrarFilas(lista)
+        val grupos = linkedMapOf<String, MutableList<Vod.Achado>>()
+        for (serie in listOf(false, true)) {
+            for ((nome, titulos) in Detalhes.fileirasEditoriais(this, serie)) {
+                grupos.getOrPut(nome) { mutableListOf() }.addAll(titulos)
+            }
+        }
+        val topo = grupos.map { (nome, titulos) ->
+            Inicio.Fila(nome, titulos.map { a ->
+                cartaoDe(Destaques.Item(a.titulo, if (a.serie) 's' else 'f', a.letra, a.ano,
+                    Generos.capa(a.nomeCompleto, a.serie).orEmpty()))
+            })
+        }
+        if (topo.isNotEmpty()) mostrarFilas(topo + lista.filterNot { it.titulo in grupos })
     }
 
     private fun mostrarFilas(lista: List<Inicio.Fila>) {

@@ -47,6 +47,9 @@ object Destaques {
         val colecao: String get() = if (tipo == 'a') "animes" else "doramas"
     }
 
+    fun lancamentoGenerico(nome: String): Boolean =
+        Regex("""lancamentos(?: de)?(?: \d{4})?""").matches(Vod.normalizar(nome).trim())
+
     data class Fila(val titulo: String, val itens: List<Item>)
 
     /// As fileiras já lidas e a data do arquivo de onde vieram: a tela inicial

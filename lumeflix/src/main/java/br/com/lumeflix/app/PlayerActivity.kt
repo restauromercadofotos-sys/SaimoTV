@@ -326,10 +326,13 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     }
 
     private suspend fun preparar() {
+        val t = intent.getIntExtra(TEMPORADA, 0)
+        val e = intent.getIntExtra(EPISODIO, 0)
+        if (t > 0 && e > 0 && !alvo.serie) alvo = alvo.copy(serie = true)
         var r = Titulos.resolver(this, alvo)
         if (r == null && alvo.letra.isBlank()) {
             val achado = Vod.achar(this, alvo.titulo, alvo.serie)
-                ?: Vod.buscar(this, alvo.titulo, 5).firstOrNull()
+                ?: Vod.buscar(this, alvo.titulo, 5).firstOrNull { it.serie == alvo.serie && Vod.normalizar(Generos.semAno(it.titulo)) == Vod.normalizar(Generos.semAno(alvo.titulo)) }
             if (achado != null) {
                 alvo = Alvo(achado.titulo, achado.serie, achado.letra, achado.ano, alvo.colecao, alvo.tmdbId)
                 r = Titulos.resolver(this, alvo)
@@ -337,15 +340,13 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         }
         val directUrl = intent.getStringExtra(EXTRA_DIRECT_URL)
         if (r == null && !directUrl.isNullOrBlank()) {
-            val filme = Filme(alvo.titulo, mapOf("dub" to listOf(directUrl)))
-            r = Titulos.Resolvido(
-                alvo = alvo,
-                nomeChave = alvo.titulo,
-                filme = filme,
-                episodios = emptyList(),
-                tmdbId = alvo.tmdbId,
-                reservado = true
-            )
+            val fontes = mapOf("dub" to listOf(directUrl))
+            if (!alvo.serie || (t > 0 && e > 0)) {
+                r = Titulos.Resolvido(alvo, alvo.titulo,
+                    if (alvo.serie) null else Filme(alvo.titulo, fontes),
+                    if (alvo.serie) listOf(Titulos.Ep(t, e, fontes)) else emptyList(),
+                    alvo.tmdbId, reservado = true)
+            }
         }
         if (isFinishing || isDestroyed) return
         if (r == null) {
@@ -354,15 +355,12 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         }
         resolvido = r
         mostrarLogo(r)
-        val t = intent.getIntExtra(TEMPORADA, 0)
-        val e = intent.getIntExtra(EPISODIO, 0)
-        ep = if (r.serie) {
-            (if (t > 0) r.episodio(t, e) else null) ?: Titulos.ondeContinuar(this, r)
-        } else null
+        ep = if (!r.serie) null else if (t > 0 && e > 0) r.episodio(t, e) else Titulos.ondeContinuar(this, r)
         // 404: se o episodio pedido for um novo lancamento que nao esta na lista local:
         if (r.serie && r.tmdbId > 0) {
             if (ep == null && t > 0 && e > 0) {
-                val extras = Resolvedor404.fontes(r.tmdbId, serie = true, temporada = t, numero = e)
+                val extras = directUrl?.takeIf { it.isNotBlank() }?.let { mapOf("dub" to listOf(it)) }
+                    ?: Resolvedor404.fontes(r.tmdbId, serie = true, temporada = t, numero = e)
                 if (extras.isNotEmpty()) {
                     val novoEp = Titulos.Ep(t, e, extras)
                     ep = novoEp
@@ -374,10 +372,15 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                 if (extras.isNotEmpty()) {
                     val epAtualizado = Titulos.Ep(ep!!.temporada, ep!!.numero, extras)
                     ep = epAtualizado
-                    r = r.copy(episodios = (r.episodios.filterNot { it.temporada == ep!!.temporada && it.numero == ep!!.numero } + epAtualizado))
+                    r = r.copy(episodios = (r.episodios.map { if (it.temporada == epAtualizado.temporada && it.numero == epAtualizado.numero) epAtualizado else it }))
                     resolvido = r
                 }
             }
+        }
+        if (r.serie && ep == null) {
+            resolvido = null
+            mostrarErro(getString(R.string.player_sumiu_titulo), getString(R.string.player_sumiu_texto))
+            return
         }
         val castStart = intent.getLongExtra(EXTRA_START_TIME, 0L)
         comecar(pedirRetomada = castStart <= 0 && !intent.getBooleanExtra(DO_INICIO, false), startTime = castStart)

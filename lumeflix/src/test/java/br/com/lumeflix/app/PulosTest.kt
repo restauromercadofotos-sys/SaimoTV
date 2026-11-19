@@ -7,6 +7,22 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class PulosTest {
+    @Test fun primeiroEpisodioMantemAberturaSemRecap() {
+        val marcas = JSONObject("""{"intro":[{"start_ms":0,"end_ms":30000}],"recap":[{"start_ms":0,"end_ms":10000}]}""")
+        assertEquals(listOf(Pulos.Tipo.ABERTURA), Pulos.ler(marcas, 1).map { it.tipo })
+        assertEquals(2, Pulos.ler(marcas, 2).size)
+    }
+
+    @Test fun proximoSegueNumeracaoMesmoDepoisDeAtualizarFonte() {
+        val primeiro = Titulos.Ep(1, 1, emptyMap())
+        val segundo = Titulos.Ep(1, 2, emptyMap())
+        val novaTemporada = Titulos.Ep(2, 1, emptyMap())
+        val serie = Titulos.Resolvido(Alvo("Teste", true, "T"), "Teste", null, listOf(novaTemporada, segundo, primeiro), 0)
+        assertEquals(segundo, serie.seguinte(primeiro.copy(fontes = mapOf("dub" to emptyList()))))
+        assertEquals(novaTemporada, serie.seguinte(segundo))
+        assertNull(serie.seguinte(novaTemporada))
+    }
+
     @Test fun aberturaERecapUsamMilissegundos() {
         val json = JSONObject("""{
             "tvdb_id": 169,

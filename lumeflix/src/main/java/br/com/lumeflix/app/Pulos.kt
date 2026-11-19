@@ -65,7 +65,7 @@ object Pulos {
             }.onFailure { e ->
                 Log.w("LumeFlix-Pulos", "Erro na consulta de abertura/créditos para TMDB $tmdbId", e)
             }.getOrNull() ?: return@withContext null
-            val marcas = Marcas(ler(json))
+            val marcas = Marcas(ler(json, episodio))
             if (marcas.trechos.isNotEmpty()) {
                 Log.d("LumeFlix-Pulos", "T$temporada E$episodio: ${marcas.trechos.size} marcações")
             } else {
@@ -75,11 +75,12 @@ object Pulos {
             marcas
         }
 
-    internal fun ler(json: JSONObject): List<Trecho> {
+    internal fun ler(json: JSONObject, episodio: Int = 0): List<Trecho> {
         val out = mutableListOf<Trecho>()
         for ((campo, tipo) in listOf(
             "intro" to Tipo.ABERTURA, "recap" to Tipo.RECAPITULACAO,
             "credits" to Tipo.CREDITOS, "preview" to Tipo.PREVIA)) {
+            if (tipo == Tipo.RECAPITULACAO && episodio == 1) continue
             val lista = json.optJSONArray(campo) ?: continue
             for (i in 0 until lista.length()) {
                 val item = lista.optJSONObject(i) ?: continue
