@@ -215,7 +215,7 @@ class SegundaTela(
         mostrarAviso(tela.getString(if (indice > 0 || retomando) R.string.loading_outra else R.string.loading))
         handler.removeCallbacks(prazo)
         handler.postDelayed(prazo, PRAZO_MS)
-        p.setMediaSource(Playback.mediaSource(tela, origem))
+        p.setMediaSource(Playback.mediaSource(tela, origem, repeticaoAoVivo))
         p.prepare()
         p.playWhenReady = true
         Connect.notificarMudancaDeEstado()
@@ -224,8 +224,9 @@ class SegundaTela(
     /** A fonte não serviu: vai para a seguinte, ou desiste com um aviso. */
     private fun avancar() {
         val atual = canal ?: return
-        if (fonte + 1 < atual.sources.size) {
-            abrir(fonte + 1, retomando = false)
+        val proxima = proximaFonteDistinta(fonte, atual.sources)
+        if (proxima >= 0) {
+            abrir(proxima, retomando = false)
             return
         }
         handler.removeCallbacks(prazo)
