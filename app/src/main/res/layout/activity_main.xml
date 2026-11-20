@@ -14,6 +14,13 @@
         app:resize_mode="fit"
         app:use_controller="false" />
 
+    <include
+        android:id="@+id/carregandoImagem"
+        layout="@layout/estado_carregando"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
     <!-- Multi tela: a segunda imagem, na metade direita. Só tem player ligado
          enquanto a multi tela está aberta; as larguras saem do código. -->
     <androidx.media3.ui.PlayerView
