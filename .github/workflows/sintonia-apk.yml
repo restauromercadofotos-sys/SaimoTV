@@ -17,6 +17,16 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools platforms;android-37.2 build-tools;36.0.0
+      - name: Configurar a chave fixa usada no LumeFlix
+        env:
+          CI_KEYSTORE_BASE64: ${{ secrets.CI_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "$CI_KEYSTORE_BASE64"
+          umask 077
+          printf '%s' "$CI_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sintonia-debug.jks"
+          printf 'storeFile=%s
+storeType=PKCS12\nstorePassword=android\nkeyAlias=apps\nkeyPassword=android\n' "$RUNNER_TEMP/sintonia-debug.jks" > keystore.properties
       - name: Compilar APK
         run: bash gradlew --no-daemon :app:assembleDebug
       - name: Conferir pacote e preparar download
@@ -25,10 +35,17 @@ jobs:
           apk=app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" > "$RUNNER_TEMP/sintonia-manifesto"
           grep -F "package: name='br.com.sintonia.tv'" "$RUNNER_TEMP/sintonia-manifesto"
-          cp "$apk" Sintonia-TV-1.0.6-debug.apk
+          certificado=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          esperado=$(keytool -exportcert -keystore "$RUNNER_TEMP/sintonia-debug.jks" -storetype PKCS12 -storepass android -alias apps | sha256sum | cut -d ' ' -f1)
+          test "$certificado" = "$esperado"
+          printf 'Certificado SHA-256 do APK: %s\n' "$certificado"
+          cp "$apk" Sintonia-TV-1.0.7-debug.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Sintonia-TV-1.0.6-debug
-          path: Sintonia-TV-1.0.6-debug.apk
+          name: Sintonia-TV-1.0.7-debug
+          path: Sintonia-TV-1.0.7-debug.apk
           if-no-files-found: error
           retention-days: 30
+      - name: Remover arquivos de assinatura
+        if: always()
+        run: rm -f keystore.properties "$RUNNER_TEMP/sintonia-debug.jks"
