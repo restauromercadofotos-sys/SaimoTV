@@ -9,6 +9,8 @@ import java.util.concurrent.TimeUnit
 
 object Enderecos {
 
+    internal const val PADRAO_CANAIS = "https://canais-saimo.pages.dev/"
+
     private const val PREFS = "listas"
     private const val CANAIS = "linkCanais"
     /// Quando os endereços foram escolhidos (ms; 0 = nunca). Na sincronia
@@ -23,8 +25,8 @@ object Enderecos {
     /** Chamado uma vez, na criação do app, antes de qualquer tela. */
     fun iniciar(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        // Valor guardado vale (vazio = desativada); sem valor, não há endereço.
-        canais = normalizar(prefs.getString(CANAIS, "").orEmpty())
+        // Ausência usa o catálogo original. Campo vazio salvo desativa.
+        canais = resolverCatalogo(prefs.getString(CANAIS, null))
     }
 
     /**
@@ -58,6 +60,9 @@ object Enderecos {
         GuiaTabelas.limpar()
         Epg.liberar()
     }
+
+    internal fun resolverCatalogo(escolhido: String?): String? =
+        if (escolhido == null) PADRAO_CANAIS else normalizar(escolhido)
 
     // MARK: - Normalização
 

@@ -10,6 +10,13 @@ class EnderecosTest {
     private fun n(texto: String) = Enderecos.normalizar(texto)
 
     @Test
+    fun `catalogo original vale ate a pessoa escolher um endereco`() {
+        assertEquals(Enderecos.PADRAO_CANAIS, Enderecos.resolverCatalogo(null))
+        assertEquals(null, Enderecos.resolverCatalogo(""))
+        assertEquals("https://outro.example/", Enderecos.resolverCatalogo("outro.example"))
+    }
+
+    @Test
     fun `sem esquema vira https`() {
         assertEquals("https://exemplo.dev/", n("exemplo.dev"))
         assertEquals("https://exemplo.dev/", n("  exemplo.dev  "))

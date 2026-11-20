@@ -1144,6 +1144,9 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             Painel.Item(getString(R.string.connect_titulo),
                 getString(R.string.connect_ip_pin, Connect.enderecoLocal(), Connect.pinAtual),
                 icone = R.drawable.ic_cast) { mostrarDialogoConectar() },
+            Painel.Item(getString(R.string.menu_ajustes), icone = R.drawable.ic_settings) {
+                AjustesActivity.abrir(this)
+            },
             Painel.Item(getString(R.string.opcoes_inicio), icone = R.drawable.ic_home) { finish() },
         )
         Painel.mostrar(this, canal.name, itens, Epg.nowNext(canal.name)?.first?.title)
@@ -1568,6 +1571,9 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             Painel.Item(getString(R.string.connect_titulo),
                 getString(R.string.connect_ip_pin, Connect.enderecoLocal(), Connect.pinAtual),
                 icone = R.drawable.ic_cast) { mostrarDialogoConectar() },
+            Painel.Item(getString(R.string.menu_ajustes), icone = R.drawable.ic_settings) {
+                AjustesActivity.abrir(this)
+            },
             Painel.Item(getString(R.string.opcoes_inicio), icone = R.drawable.ic_home) { finish() },
         ), nome)
     }
