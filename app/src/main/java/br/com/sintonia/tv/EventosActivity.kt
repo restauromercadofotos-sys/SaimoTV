@@ -141,7 +141,7 @@ class EventosActivity : TelaComEstadoVazio() {
     private fun cartao(j: Jogo, agora: Long): Inicio.Cartao {
         val aoVivo = j.aoVivo(agora)
         val quando = quando(j.inicio, agora)
-        val rotuloNoAr = if (j.estado.isEmpty()) "No ar" else getString(R.string.radio_ao_vivo)
+        val rotuloNoAr = if (j.estado.isEmpty()) "No ar" else getString(R.string.esporte_ao_vivo)
         val selo = if (aoVivo) listOf(rotuloNoAr, j.placar).filter { it.isNotBlank() }.joinToString("  ")
                    else quando
         val meta = listOf(j.liga,

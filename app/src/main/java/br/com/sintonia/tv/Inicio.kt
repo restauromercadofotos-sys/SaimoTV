@@ -11,7 +11,7 @@ import androidx.recyclerview.widget.RecyclerView
 import coil3.dispose
 import coil3.load
 
-/** Fileiras de canais, rádios e eventos. */
+/** Fileiras de canais e eventos. */
 object Inicio {
 
     /// A fileira do último cartão focado: rolar a tela só quando ela muda.

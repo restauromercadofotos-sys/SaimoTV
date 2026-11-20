@@ -17,7 +17,7 @@ import androidx.recyclerview.widget.RecyclerView
  * Painel de opções que entra pela direita, no lugar dos diálogos de celular.
  *
  * O `AlertDialog` do Android é desenhado para o dedo a trinta centímetros:
- * letra pequena, lista apertada, rádio minúsculo. Do sofá não se lê. Aqui a
+ * letra pequena, lista apertada. Do sofá não se lê. Aqui a
  * linha focada fica branca e grande, o vídeo continua à vista do lado, e
  * VOLTAR fecha — o mesmo gesto de todo o resto do app.
  */

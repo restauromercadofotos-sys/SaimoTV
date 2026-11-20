@@ -11,7 +11,7 @@ import java.util.Locale
  * Áudio, legenda e qualidade, nos painéis de TV.
  *
  * Substitui o diálogo do Media3, que abria outro diálogo dentro dele, com
- * letra de celular e rádio minúsculo.
+ * letra de celular .
  */
 @UnstableApi
 object Faixas {

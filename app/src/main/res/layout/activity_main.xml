@@ -191,8 +191,6 @@
             android:textSize="15sp" />
     </FrameLayout>
 
-    <!-- Rádio tocando: o painel cobre a tela que seria preta. -->
-    <include layout="@layout/painel_radio" />
 
     <!-- Cartão do que está no ar: canal, programa, quanto já passou. -->
     <LinearLayout
