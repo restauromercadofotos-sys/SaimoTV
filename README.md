@@ -4,7 +4,7 @@ Aplicativo Android TV independente para assistir a canais ao vivo na Mi Box e em
 
 ## Assistir
 
-Em **Ajustes → Minhas listas**, adicione um link ou arquivo M3U, ou informe servidor, usuário e senha da sua lista. Também é possível configurar um catálogo de canais por endereço em **Ajustes → Listas**. Os canais dependem das listas adicionadas pela pessoa que usa o app.
+Em **Ajustes → Minhas listas**, adicione um link ou arquivo M3U, ou informe servidor, usuário e senha da sua lista. Também é possível configurar um catálogo de canais por endereço em **Ajustes → Listas**. A Sintonia TV abre o ao vivo usando o catálogo padrão do APK TV Ao vivo. Deixe o endereço em branco e salve para desativá-lo.
 
 - **OK** sobre o vídeo abre o guia. Use as setas para navegar por categorias, canais, dias e programas. O guia fecha após oito segundos sem atividade.
 - **Cima/baixo** sobre o vídeo troca de canal. A faixa inferior mostra o que está no ar e o que vem a seguir quando a grade está disponível.
