@@ -9,6 +9,9 @@
     <string name="keypad">123</string>
     <string name="pad_delete">apagar</string>
     <string name="pad_ok">ir</string>
+    <string name="guide_assistir_canal">Assistir %1$s</string>
+    <string name="guide_outros_canais">Programação de outros canais</string>
+    <string name="guide_sem_programacao">Programação indisponível. O canal continua tocando.</string>
     <string name="guide">Programação</string>
     <string name="ficha_assistir">Assistir este canal</string>
     <string name="ficha_fechar">Fechar</string>
