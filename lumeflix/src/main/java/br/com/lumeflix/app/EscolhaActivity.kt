@@ -135,7 +135,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         filas.postDelayed({
             quandoAberturaAcabar { if (!isFinishing && Painel.dialogVisivel() == null) atualizacao.ofertar() }
         }, 2_500)
-        lifecycleScope.launch(semDerrubar) { CanalNaTv.publicar(applicationContext) }
+        InicializarCanais.agendar(this)
 
         val veioDeLink = intent?.action == Intent.ACTION_VIEW || intent?.action == Intent.ACTION_SEARCH
         atenderLink(intent)

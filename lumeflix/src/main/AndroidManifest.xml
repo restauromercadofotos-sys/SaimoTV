@@ -53,6 +53,14 @@
             android:name="android.app.default_searchable"
             android:value=".EscolhaActivity" />
 
+        <receiver android:name=".InicializarCanais" android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.tv.action.INITIALIZE_PROGRAMS" />
+            </intent-filter>
+        </receiver>
+        <service android:name=".PublicarCanaisJob" android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- A abertura: TV ao vivo ou filmes e séries. É ela que o sistema
              abre; os canais deixaram de ser a primeira tela. -->
         <activity
