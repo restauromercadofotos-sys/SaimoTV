@@ -5,5 +5,5 @@
 # assim levou a abertura fria de 400 ms para 280 ms e tirou os engasgos da
 # primeira rolagem (medido em 2026-10-12). O app é pequeno: vai inteiro.
 # As bibliotecas (Media3, Coil, OkHttp, RecyclerView) trazem os perfis delas.
-HSPLbr/com/saimo/tv/**->**(**)**
-Lbr/com/saimo/tv/**;
+HSPLbr/com/sintonia/tv/**->**(**)**
+Lbr/com/sintonia/tv/**;

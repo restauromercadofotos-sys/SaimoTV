@@ -9,9 +9,6 @@
          .m3u da pasta Download. Pedida na hora, nunca na abertura do app. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- Instalar a atualização baixada; o sistema ainda pede a confirmação. -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- "Continuar assistindo" e a fileira do Saimo na tela inicial da TV. -->
-    <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
 
     <!-- Televisão primeiro: sem toque, tudo pelo controle. -->
     <uses-feature android:name="android.software.leanback" android:required="true" />
@@ -27,7 +24,7 @@
     </queries>
 
     <application
-        android:name=".SaimoApp"
+        android:name=".SintoniaApp"
         android:allowBackup="true"
         android:banner="@drawable/banner"
         android:icon="@mipmap/ic_launcher"
@@ -36,7 +33,7 @@
         android:largeHeap="true"
         android:enableOnBackInvokedCallback="false"
         tools:targetApi="33"
-        android:theme="@style/Theme.Saimo"
+        android:theme="@style/Theme.Sintonia"
         android:usesCleartextTraffic="true">
         <!-- enableOnBackInvokedCallback="false": com o voltar preditivo (padrão
              a partir do targetSdk 36) o Android para de entregar KEYCODE_BACK
@@ -53,14 +50,14 @@
             android:name="android.app.default_searchable"
             android:value=".EscolhaActivity" />
 
-        <!-- A abertura: TV ao vivo ou filmes e séries. É ela que o sistema
-             abre; os canais deixaram de ser a primeira tela. -->
+        <!-- Tela inicial e entrada de links de canais. -->
         <activity
             android:name=".EscolhaActivity"
+            android:banner="@drawable/banner"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:exported="true"
             android:screenOrientation="landscape"
-            android:theme="@style/Theme.Saimo.Abertura">
+            android:theme="@style/Theme.Sintonia">
             <!-- Janela no Horizon OS e demais óculos; TV Box ignora. -->
             <layout android:defaultWidth="1024dp" android:defaultHeight="640dp"
                 android:minWidth="720dp" android:minHeight="405dp" />
@@ -69,12 +66,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-            <!-- Links saimo:// da tela inicial da TV e da busca do sistema. -->
+            <!-- Links sintonia-tv:// da tela inicial da TV e da busca do sistema. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="saimo" />
+                <data android:scheme="sintonia-tv" android:host="canal" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEARCH" />
@@ -85,27 +82,17 @@
                 android:resource="@xml/busca" />
         </activity>
         <activity
-            android:name=".PlayerActivity"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.Saimo.Video">
-            <!-- Janela no Horizon OS e demais óculos; TV Box ignora. -->
-            <layout android:defaultWidth="1024dp" android:defaultHeight="640dp"
-                android:minWidth="720dp" android:minHeight="405dp" />
-        </activity>
-        <activity
             android:name=".AjustesActivity"
             android:exported="false"
             android:screenOrientation="landscape"
-            android:theme="@style/Theme.Saimo">
+            android:theme="@style/Theme.Sintonia">
             <!-- Janela no Horizon OS e demais óculos; TV Box ignora. -->
             <layout android:defaultWidth="1024dp" android:defaultHeight="640dp"
                 android:minWidth="720dp" android:minHeight="405dp" />
         </activity>
         <provider
             android:name=".BuscaDoSistema"
-            android:authorities="br.com.saimo.tv.busca"
+            android:authorities="${applicationId}.busca"
             android:exported="true" />
         <activity
             android:name=".MainActivity"
@@ -113,81 +100,23 @@
             android:exported="false"
             android:launchMode="singleTop"
             android:screenOrientation="landscape"
-            android:theme="@style/Theme.Saimo.Video">
+            android:theme="@style/Theme.Sintonia.Video">
             <!-- Janela no Horizon OS e demais óculos; TV Box ignora. -->
             <layout android:defaultWidth="1024dp" android:defaultHeight="640dp"
                 android:minWidth="720dp" android:minHeight="405dp" />
         </activity>
-        <activity
-            android:name=".GradeActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.Saimo">
-            <!-- Janela no Horizon OS e demais óculos; TV Box ignora. -->
-            <layout android:defaultWidth="1024dp" android:defaultHeight="640dp"
-                android:minWidth="720dp" android:minHeight="405dp" />
-        </activity>
-        <activity
-            android:name=".PaginaActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.Saimo">
-            <!-- Janela no Horizon OS e demais óculos; TV Box ignora. -->
-            <layout android:defaultWidth="1024dp" android:defaultHeight="640dp"
-                android:minWidth="720dp" android:minHeight="405dp" />
-        </activity>
-        <activity
-            android:name=".BuscaActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:windowSoftInputMode="stateAlwaysHidden"
-            android:theme="@style/Theme.Saimo">
-            <!-- Janela no Horizon OS e demais óculos; TV Box ignora. -->
-            <layout android:defaultWidth="1024dp" android:defaultHeight="640dp"
-                android:minWidth="720dp" android:minHeight="405dp" />
-        </activity>
-        <activity
-            android:name=".FichaActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.Saimo">
-            <!-- Janela no Horizon OS e demais óculos; TV Box ignora. -->
-            <layout android:defaultWidth="1024dp" android:defaultHeight="640dp"
-                android:minWidth="720dp" android:minHeight="405dp" />
-        </activity>
-        <activity
-            android:name=".AtorActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.Saimo">
-            <!-- Janela no Horizon OS e demais óculos; TV Box ignora. -->
-            <layout android:defaultWidth="1024dp" android:defaultHeight="640dp"
-                android:minWidth="720dp" android:minHeight="405dp" />
-        </activity>
-        <!-- O sistema responde aqui quando a instalação precisa da confirmação
-             de quem está assistindo. -->
-        <receiver
-            android:name=".InstaladorReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="br.com.saimo.tv.INSTALADO" />
-            </intent-filter>
-        </receiver>
-
-        <activity
+<activity
             android:name=".GuideActivity"
             android:exported="false"
             android:screenOrientation="landscape"
-            android:theme="@style/Theme.Saimo">
+            android:theme="@style/Theme.Sintonia">
             <!-- Janela no Horizon OS e demais óculos; TV Box ignora. -->
             <layout android:defaultWidth="1024dp" android:defaultHeight="640dp"
                 android:minWidth="720dp" android:minHeight="405dp" />
         </activity>
         <activity android:name=".EventosActivity" />
     
-        <activity android:name=".OnDemandActivity" android:exported="false" android:launchMode="singleTop" />
         <activity android:name=".SemListaActivity" android:exported="false" />
         <activity android:name=".RadiosActivity" android:exported="false" android:launchMode="singleTop" />
-        <activity android:name=".DoacaoActivity" android:exported="false" android:launchMode="singleTop" />
 </application>
 </manifest>

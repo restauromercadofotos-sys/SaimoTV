@@ -193,7 +193,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="#D910131C"
+        android:background="#D9101716"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="24dp"
@@ -433,27 +433,6 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="17sp" />
         </LinearLayout>
-
-        <!-- Entrada para filmes e séries: uma linha só, logo acima dos canais,
-             onde o olho já está. -->
-        <TextView
-            android:id="@+id/vodEntrada"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:layout_marginTop="8dp"
-            android:layout_marginEnd="20dp"
-            android:background="@drawable/row_focus"
-            android:drawablePadding="14dp"
-            android:focusable="true"
-            android:fontFamily="sans-serif-medium"
-            android:paddingStart="16dp"
-            android:paddingTop="14dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="14dp"
-            android:text="@string/vod"
-            android:textColor="@color/accent"
-            android:textSize="20sp" />
 
         <!-- Seções: pular direto para Esportes, Notícias... sem descer a lista. -->
         <HorizontalScrollView
