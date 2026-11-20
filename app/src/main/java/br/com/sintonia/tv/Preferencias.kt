@@ -57,7 +57,7 @@ object Preferencias {
 
     /** Onde o app abre: "inicio" ou "canal" (o último canal assistido). */
     var abrirEm: String
-        get() = prefs.getString("abrirEm", "inicio") ?: "inicio"
+        get() = prefs.getString("abrirEm", "canal") ?: "canal"
         set(valor) = prefs.edit().putString("abrirEm", valor).apply()
 
     /** Nome do último canal assistido, para voltar nele. */

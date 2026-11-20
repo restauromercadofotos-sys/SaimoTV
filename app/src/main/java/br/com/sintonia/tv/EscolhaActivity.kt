@@ -37,7 +37,7 @@ class EscolhaActivity : TelaComMenu() {
             Epg.carregarCache(this@EscolhaActivity)
             montar()
             if (savedInstanceState == null && !atender(intent) &&
-                Preferencias.abrirEm == "canal" && Preferencias.ultimoCanal != null) abrirCanal()
+                intent.action == Intent.ACTION_MAIN && Preferencias.abrirEm == "canal") abrirCanal()
         }
     }
 
