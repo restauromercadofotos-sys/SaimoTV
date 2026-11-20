@@ -25,6 +25,9 @@ import android.media.AudioManager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.withStarted
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -180,15 +183,25 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Sem canal nenhum (sem endereço, ou lista que não carregou) não há o
-        // que tocar: a aba abre vazia, com o atalho para os endereços.
-        if (Remote.channels.isEmpty() && Enderecos.canais != null) Remote.loadCached(this)
-        if (MinhasListas.canaisDaTela().isEmpty()) {
-            SemListaActivity.abrir(this)
-            semCanais = true
-            finish()
-            return
+        setContentView(R.layout.estado_carregando)
+        lifecycleScope.launch(semDerrubar) {
+            val temCanais = withContext(Dispatchers.IO) {
+                if (Remote.channels.isEmpty() && Enderecos.canais != null) Remote.loadCached(applicationContext)
+                MinhasListas.canaisDaTela().isNotEmpty()
+            }
+            lifecycle.withStarted {
+                if (isFinishing) return@withStarted
+                if (temCanais) montarPlayer()
+                else {
+                    SemListaActivity.abrir(this@MainActivity)
+                    semCanais = true
+                    finish()
+                }
+            }
         }
+    }
+
+    private fun montarPlayer() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_main)
         if (Vr.ativo) Vr.videoEmTextura(this, R.id.player)
@@ -301,6 +314,8 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         play(ordered.indexOfFirst { it.name == pedido }.coerceAtLeast(0))
         handler.postDelayed(tick, TICK_MS)
         handler.postDelayed(vigiaDeImagem, VIGIA_MS)
+        Connect.listener = this
+        jaIniciou = true
     }
 
     /**
@@ -388,6 +403,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         status.visibility = View.GONE
         if (!abriuImagem) {
             abriuImagem = true
+            if (Connect.quantosAutorizados(this) > 0) Connect.iniciar(this)
             refreshCatalog()
         }
         startGuide()
@@ -438,6 +454,8 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
+        if (!::player.isInitialized) return
         val nome = intent.getStringExtra(EXTRA_CANAL) ?: return
         val indice = encontrarIndiceCanal(nome)
         if (indice >= 0) play(indice)
@@ -511,22 +529,13 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
                 val durationMs = mediaLoadData.mediaEndTimeMs - mediaLoadData.mediaStartTimeMs
                 if (durationMs > 0 && bytes > 0) {
                     val bps = (bytes * 8000L) / durationMs
+                    val anterior = (bitrateDinâmicoBps + 50_000) / 100_000
                     // Média móvel suave para não piscar muito (70% antigo, 30% novo)
                     if (bitrateDinâmicoBps == 0L) bitrateDinâmicoBps = bps
                     else bitrateDinâmicoBps = (bitrateDinâmicoBps * 7 + bps * 3) / 10
                     
-                    // Atualiza a tela se já tivermos um tamanho de vídeo
-                    ultimoVideoSize?.let {
-                        runOnUiThread {
-                            var rotulo = rotuloResolucao(it.width, it.height)
-                            if (bitrateDinâmicoBps > 0) {
-                                rotulo += String.format(java.util.Locale.US, " · %.1f Mbps", bitrateDinâmicoBps / 1_000_000f)
-                            }
-                            if (rotulo.isNotEmpty()) rotulo += Upscaling.sufixoResolucao(it.height)
-                            bannerResolution.text = rotulo
-                            bannerResolution.visibility = if (rotulo.isEmpty() || faixaDaSegunda()) android.view.View.GONE else android.view.View.VISIBLE
-                        }
-                    }
+                    if (banner.visibility == View.VISIBLE && !faixaDaSegunda() &&
+                        anterior != (bitrateDinâmicoBps + 50_000) / 100_000) atualizarResolucao()
                 }
             }
         }
@@ -534,39 +543,10 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
 
 
     private val playerListener = object : Player.Listener {
-override fun onVideoSizeChanged(videoSize: VideoSize) {
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
             ultimoVideoSize = videoSize
-            var rotulo = rotuloResolucao(videoSize.width, videoSize.height)
-            
-            // Tenta pegar do formato se existir (quando a lista informa)
-            var bitrateDaFaixa = player.videoFormat?.bitrate ?: androidx.media3.common.Format.NO_VALUE
-            if (bitrateDaFaixa <= 0) {
-                for (grupo in player.currentTracks.groups) {
-                    if (grupo.type == androidx.media3.common.C.TRACK_TYPE_VIDEO && grupo.isSelected) {
-                        for (i in 0 until grupo.length) {
-                            if (grupo.isTrackSelected(i)) {
-                                val b = grupo.getTrackFormat(i).bitrate
-                                if (b > 0) bitrateDaFaixa = b
-                                break
-                            }
-                        }
-                    }
-                    if (bitrateDaFaixa > 0) break
-                }
-            }
-            
-            // Usa o da faixa se existir, senão usa o dinâmico
-            val bitrateFinal = if (bitrateDaFaixa > 0) bitrateDaFaixa.toLong() else bitrateDinâmicoBps
-            
-            if (bitrateFinal > 0) {
-                rotulo += String.format(java.util.Locale.US, " · %.1f Mbps", bitrateFinal / 1_000_000f)
-            }
-            if (rotulo.isNotEmpty()) rotulo += Upscaling.sufixoResolucao(videoSize.height)
-            
-            bannerResolution.text = rotulo
-            bannerResolution.visibility = if (rotulo.isEmpty() || faixaDaSegunda()) android.view.View.GONE else android.view.View.VISIBLE
+            if (banner.visibility == View.VISIBLE && !faixaDaSegunda()) atualizarResolucao()
         }
-
 
         override fun onPlaybackStateChanged(state: Int) {
             if (state == Player.STATE_BUFFERING) imagemEstavelDesde = 0L
@@ -682,6 +662,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!::player.isInitialized) return super.dispatchKeyEvent(event)
         if (!semCanais && !Vr.ativo) {
             val tecla = event.keyCode
             if (event.action == KeyEvent.ACTION_UP && teclasDoGuia.remove(tecla)) return true
@@ -698,6 +679,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (!::player.isInitialized) return super.onKeyDown(keyCode, event)
         if (numpad.visibility == View.VISIBLE) {
             if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
                 closeNumpad()
@@ -952,6 +934,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     private var okApertado = false
 
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
+        if (!::player.isInitialized) return super.onKeyLongPress(keyCode, event)
         if ((keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) &&
             listPanel.visibility != View.VISIBLE && numpad.visibility != View.VISIBLE) {
             okSegurado = true
@@ -962,6 +945,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (!::player.isInitialized) return super.onKeyUp(keyCode, event)
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
             // O OK que abriu a lista não pode, ao ser solto, escolher o canal em foco.
             if (SystemClock.elapsedRealtime() - listaAbertaEm < 400) return true
@@ -1855,6 +1839,39 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         bannerProgress.progress = ((onAir?.progress(now) ?: 0f) * 1000).toInt()
     }
 
+    private fun atualizarResolucao() {
+        val tamanho = ultimoVideoSize ?: return
+        var rotulo = rotuloResolucao(tamanho.width, tamanho.height)
+
+        // Tenta pegar do formato se existir (quando a lista informa)
+        var bitrateDaFaixa = player.videoFormat?.bitrate ?: androidx.media3.common.Format.NO_VALUE
+        if (bitrateDaFaixa <= 0) {
+            for (grupo in player.currentTracks.groups) {
+                if (grupo.type == androidx.media3.common.C.TRACK_TYPE_VIDEO && grupo.isSelected) {
+                    for (i in 0 until grupo.length) {
+                        if (grupo.isTrackSelected(i)) {
+                            val b = grupo.getTrackFormat(i).bitrate
+                            if (b > 0) bitrateDaFaixa = b
+                            break
+                        }
+                    }
+                }
+                if (bitrateDaFaixa > 0) break
+            }
+        }
+
+        // Usa o da faixa se existir, senão usa o dinâmico
+        val bitrateFinal = if (bitrateDaFaixa > 0) bitrateDaFaixa.toLong() else bitrateDinâmicoBps
+
+        if (bitrateFinal > 0) {
+            rotulo += String.format(java.util.Locale.US, " · %.1f Mbps", bitrateFinal / 1_000_000f)
+        }
+        if (rotulo.isNotEmpty()) rotulo += Upscaling.sufixoResolucao(tamanho.height)
+
+        bannerResolution.text = rotulo
+        bannerResolution.visibility = if (rotulo.isEmpty() || faixaDaSegunda()) android.view.View.GONE else android.view.View.VISIBLE
+    }
+
     private fun revealBanner() {
         if (listPanel.visibility == View.VISIBLE || (!Vr.ativo && guiaAoVivo.aberto)) return
         // Na multi tela a faixa vai para a metade ativa (ver posicionarBanner).
@@ -1865,6 +1882,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             posicionarBanner()
         }
         updateBanner()
+        if (!faixaDaSegunda()) atualizarResolucao()
         handler.removeCallbacks(hideBanner)
         banner.animate().cancel()
         if (banner.visibility != View.VISIBLE) {
@@ -1923,7 +1941,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
 
     override fun onStart() {
         super.onStart()
-        if (semCanais || isFinishing) return
+        if (semCanais || isFinishing || !::player.isInitialized) return
         Connect.listener = this
         Connect.notificarMudancaDeEstado()
         emSegundoPlano = false
@@ -1961,7 +1979,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     override fun onDestroy() {
-        if (semCanais) { super.onDestroy(); return }
+        if (semCanais || !::player.isInitialized) { super.onDestroy(); return }
         handler.removeCallbacksAndMessages(null)
         segunda?.soltar()
         segunda = null
@@ -2075,6 +2093,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     // MARK: - Sintonia Connect (Controle Remoto e Celular)
 
     private fun mostrarDialogoConectar() {
+        Connect.iniciar(this)
         val ip = Connect.enderecoLocal()
         val pin = Connect.pinAtual
         android.app.AlertDialog.Builder(this)

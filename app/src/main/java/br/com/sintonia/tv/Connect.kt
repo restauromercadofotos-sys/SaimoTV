@@ -352,7 +352,8 @@ object Connect {
         for (c in clientes) c.fechar()
     }
 
-    fun quantosAutorizados(): Int = synchronized(trustedCids) { trustedCids.size }
+    fun quantosAutorizados(context: Context): Int =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getStringSet(KEY_TRUSTED_CIDS, null)?.size ?: 0
 
     fun solicitarAprovacaoNaUi(nomeDispositivo: String, aoResponder: (permitido: Boolean) -> Unit) {
         handler.post {

@@ -28,8 +28,8 @@ android {
         // Até a 2.0.2 era o 5 (21); quem ainda tem Android 5 fica na 2.0.2.
         minSdk = 23
         targetSdk = 37
-        versionCode = 7
-        versionName = "1.0.6"
+        versionCode = 8
+        versionName = "1.0.7"
     }
 
     signingConfigs {
@@ -40,6 +40,7 @@ android {
                 storePassword = chave.getProperty("storePassword")
                 keyAlias = chave.getProperty("keyAlias")
                 keyPassword = chave.getProperty("keyPassword")
+                chave.getProperty("storeType")?.let { storeType = it }
             }
         }
     }
