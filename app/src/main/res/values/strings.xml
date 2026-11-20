@@ -210,4 +210,7 @@
     <string name="sinal_trocando_fonte">Tentando fonte %1$d</string>
     <string name="sinal_repetido_trocando">Transmissão repetida · tentando fonte %1$d</string>
     <string name="sinal_repetido">Transmissão repetida</string>
+    <string name="carregando_dados">Carregando dados…</string>
+    <string name="carregando_imagem">Sintonizando canal…</string>
+    <string name="retomando_imagem">Retomando imagem…</string>
 </resources>

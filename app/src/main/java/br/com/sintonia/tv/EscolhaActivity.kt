@@ -4,6 +4,7 @@ import android.app.SearchManager
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
+import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
@@ -16,11 +17,12 @@ import kotlinx.coroutines.withContext
 class EscolhaActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.estado_carregando)
         lifecycleScope.launch(semDerrubar) {
             withContext(Dispatchers.IO) {
                 if (Remote.channels.isEmpty() && Enderecos.canais != null) {
                     Remote.loadCached(this@EscolhaActivity)
-                    if (Remote.channels.isEmpty()) Listas.recarregar(applicationContext)
+                    if (MinhasListas.canaisDaTela().isEmpty()) Remote.refresh(applicationContext)
                 }
             }
             if (isFinishing) return@launch
@@ -33,6 +35,7 @@ class EscolhaActivity : AppCompatActivity() {
                     val termo = intent.getStringExtra(SearchManager.QUERY).orEmpty()
                     val canais = buscarCanais(termo)
                     if (canais.isNotEmpty()) {
+                        findViewById<View>(R.id.carregandoConteudo).visibility = View.GONE
                         Painel.mostrar(this@EscolhaActivity, getString(R.string.menu_buscar),
                             canais.map { canal -> Painel.Item(canal.name) { abrirCanal(canal.name) } },
                             aoFechar = { finish() })

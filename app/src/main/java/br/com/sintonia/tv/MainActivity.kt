@@ -115,6 +115,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
     private lateinit var bannerTimes: TextView
     private lateinit var bannerClock: TextView
     private lateinit var status: TextView
+    private lateinit var carregandoImagem: View
     private lateinit var avisoSinal: TextView
     private lateinit var listHeader: View
     private lateinit var numpad: View
@@ -225,6 +226,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         bannerTimes = findViewById(R.id.bannerTimes)
         bannerClock = findViewById(R.id.bannerClock)
         status = findViewById(R.id.status)
+        carregandoImagem = findViewById(R.id.carregandoImagem)
         avisoSinal = findViewById(R.id.avisoSinal)
         listHeader = findViewById(R.id.listHeader)
         numpad = findViewById(R.id.numpad)
@@ -323,12 +325,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
             val pedido = intent.getStringExtra(EXTRA_CANAL) ?: Preferencias.ultimoCanal
             play(ordered.indexOfFirst { it.name == pedido }.coerceAtLeast(0))
         }
-        refreshCatalog()
         handler.postDelayed(tick, TICK_MS)
-        // Rede é uma só: 35 downloads do guia disputando banda com o canal que
-        // acabou de abrir travam a imagem nos primeiros segundos. O guia entra
-        // quando o vídeo já está rodando, ou em três segundos se não rodar.
-        handler.postDelayed({ startGuide() }, 3_000)
         handler.postDelayed(vigiaDeImagem, VIGIA_MS)
     }
 
@@ -387,9 +384,40 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         }
     }
 
-    /// Distingue a primeira abertura (que já oferece pelo refreshCatalog) da
-    /// volta de outra tela, como as configurações.
+    /// Distingue a primeira abertura da volta de outra tela.
     private var jaIniciou = false
+    private var abriuImagem = false
+    private var esperandoImagem = false
+    private var volumeDesejado = 1f
+
+    private fun ajustarVolume(volume: Float) {
+        volumeDesejado = volume
+        player.volume = if (esperandoImagem) 0f else volume
+    }
+
+    private fun aguardarImagem(mensagem: Int) {
+        esperandoImagem = true
+        carregandoImagem.findViewById<TextView>(R.id.carregandoMensagem).setText(mensagem)
+        carregandoImagem.visibility = View.VISIBLE
+        status.visibility = View.GONE
+        ajustarVolume(volumeDesejado)
+    }
+
+    private fun concluirImagem() {
+        if (emSegundoPlano) return
+        if (esperandoImagem) {
+            esperandoImagem = false
+            carregandoImagem.visibility = View.GONE
+            ajustarVolume(volumeDesejado)
+        }
+        handler.removeCallbacks(sourceTimeout)
+        status.visibility = View.GONE
+        if (!abriuImagem) {
+            abriuImagem = true
+            if (!isModoRadio) refreshCatalog()
+        }
+        if (!isModoRadio) startGuide()
+    }
     private var emSegundoPlano = false
     private var bitrateDinâmicoBps = 0L
     private var ultimoVideoSize: androidx.media3.common.VideoSize? = null
@@ -484,12 +512,13 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         // canal está chegando. O detalhe técnico mora no painel de opções.
         bitrateDinâmicoBps = 0L
         ultimoVideoSize = null
+        if (!isModoRadio && (!abriuImagem || esperandoImagem)) aguardarImagem(R.string.carregando_imagem)
         if (apósFalha) {
             status.visibility = View.GONE
             if (mudouDeFonte) avisarSinal(getString(R.string.sinal_trocando_fonte, sourceIndex + 1))
         } else {
             ocultarAvisoSinal.run()
-            showStatus(getString(R.string.loading))
+            if (!esperandoImagem) showStatus(getString(R.string.loading))
         }
         handler.removeCallbacks(sourceTimeout)
         handler.postDelayed(sourceTimeout, SOURCE_TIMEOUT_MS)
@@ -587,14 +616,19 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                     val demorou = android.os.SystemClock.elapsedRealtime() - tentativaDesde
                     Log.i("SintoniaTV", "tocou em $demorou ms (fonte ${sourceIndex + 1})")
                 }
-                handler.removeCallbacks(sourceTimeout)
+                val faixas = player.currentTracks
+                if (isModoRadio || (!faixas.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO) &&
+                        faixas.isTypeSelected(androidx.media3.common.C.TRACK_TYPE_AUDIO))) concluirImagem()
+                else if (!esperandoImagem) handler.removeCallbacks(sourceTimeout)
                 handler.postDelayed(ocultarAvisoSinal, 3_500)
-                status.visibility = View.GONE
-                startGuide()
                 Connect.notificarMudancaDeEstado()
             }
         }
         
+        override fun onRenderedFirstFrame() {
+            concluirImagem()
+        }
+
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             // Se tentar pausar enquanto o app está aberto, força a tocar de novo.
             // TV ao vivo não tem pausa. (O sistema pausa sozinho se perder foco de áudio, por ex).
@@ -1285,6 +1319,9 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         repeticaoAoVivo.reiniciar(false)
         tocouAvisado = false
         player.stop()
+        esperandoImagem = false
+        carregandoImagem.visibility = View.GONE
+        ajustarVolume(volumeDesejado)
         if (!Vr.ativo && !isModoRadio) guiaAoVivo.fechar()
         status.visibility = View.GONE
         avisarSinal(getString(R.string.unavailable))
@@ -1435,7 +1472,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         telaAtiva = 0
         segunda?.soltar()
         segunda = null
-        player.volume = 1f
+        ajustarVolume(1f)
         Connect.tvAudio = "0"
         // O decodificador do principal foi aberto para a metade, com a
         // qualidade limitada: solto, ele volta no tamanho cheio e já na
@@ -1492,29 +1529,29 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         val celularOuvindo = Connect.temAudioNoCelular()
         if (!celularOuvindo) {
             if (Connect.tvAudio == "mute") {
-                player.volume = 0f
+                ajustarVolume(0f)
                 segunda?.comSom = false
             } else {
-                player.volume = if (telaAtiva == 0) 1f else 0f
+                ajustarVolume(if (telaAtiva == 0) 1f else 0f)
                 segunda?.comSom = (telaAtiva == 1)
                 Connect.tvAudio = if (telaAtiva == 0) "0" else "1"
             }
         } else {
             when (Connect.tvAudio) {
                 "0" -> {
-                    player.volume = 1f
+                    ajustarVolume(1f)
                     segunda?.comSom = false
                 }
                 "1" -> {
-                    player.volume = 0f
+                    ajustarVolume(0f)
                     segunda?.comSom = true
                 }
                 "mute" -> {
-                    player.volume = 0f
+                    ajustarVolume(0f)
                     segunda?.comSom = false
                 }
                 else -> {
-                    player.volume = if (telaAtiva == 0) 1f else 0f
+                    ajustarVolume(if (telaAtiva == 0) 1f else 0f)
                     segunda?.comSom = (telaAtiva == 1)
                 }
             }
@@ -1948,6 +1985,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         handler.removeCallbacks(tentarReconexao)
         handler.removeCallbacks(sourceTimeout)
         player.playWhenReady = false
+        if (!isModoRadio) playerView.player = null
         pararRelogios()
         handler.postDelayed(soltarPlayerParado, SOLTAR_PLAYER_MS)
     }
@@ -1963,11 +2001,14 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             pararRelogios()
             handler.postDelayed(tick, TICK_MS)
             handler.postDelayed(vigiaDeImagem, VIGIA_MS)
-            // O guia pode ter sido solto da memória com o app em segundo plano.
-            if (guideStarted && Epg.channelsWithGuide == 0) {
-                guideStarted = false
-                startGuide()
+            if (guideStarted && Epg.channelsWithGuide == 0) guideStarted = false
+            if (!isModoRadio && (player.playbackState != Player.STATE_IDLE || playerSolto || player.playerError != null)) {
+                aguardarImagem(R.string.retomando_imagem)
+                handler.postDelayed(sourceTimeout, SOURCE_TIMEOUT_MS)
             }
+            if (!isModoRadio) playerView.player = player
+            if (esperandoImagem && player.playbackState == Player.STATE_READY &&
+                !player.currentTracks.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO)) concluirImagem()
         }
         val mudouUpscaling = ::player.isInitialized && Upscaling.aplicar(player)
         if (playerSolto || mudouUpscaling) {
@@ -2255,21 +2296,21 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                     "0" -> ativarTela(0)
                     "1" -> ativarTela(1)
                     "mute" -> {
-                        player.volume = 0f
+                        ajustarVolume(0f)
                         segunda?.comSom = false
                     }
                 }
             } else {
                 when (som) {
-                    "0" -> { player.volume = 1f; segunda?.comSom = false }
-                    "1" -> { player.volume = 0f; segunda?.comSom = true }
-                    "mute" -> { player.volume = 0f; segunda?.comSom = false }
+                    "0" -> { ajustarVolume(1f); segunda?.comSom = false }
+                    "1" -> { ajustarVolume(0f); segunda?.comSom = true }
+                    "mute" -> { ajustarVolume(0f); segunda?.comSom = false }
                 }
             }
         } else {
             when (som) {
-                "mute" -> { player.volume = 0f }
-                else -> { player.volume = 1f }
+                "mute" -> { ajustarVolume(0f) }
+                else -> { ajustarVolume(1f) }
             }
         }
         Connect.notificarMudancaDeEstado()
