@@ -53,38 +53,13 @@
             android:importantForAutofill="no"
             android:inputType="textUri"
             android:maxLines="1"
-            android:nextFocusDown="@+id/listasFilmes"
-            android:padding="14dp"
-            android:singleLine="true"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_faint"
-            android:textSize="20sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/listas_filmes"
-            android:textColor="@color/accent"
-            android:textSize="16sp" />
-
-        <EditText
-            android:id="@+id/listasFilmes"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:background="@drawable/bg_campo"
-            android:hint="@string/listas_dica_filmes"
-            android:imeOptions="actionDone|flagNoExtractUi"
-            android:importantForAutofill="no"
-            android:inputType="textUri"
-            android:maxLines="1"
             android:nextFocusDown="@+id/listasSalvar"
             android:padding="14dp"
             android:singleLine="true"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_faint"
             android:textSize="20sp" />
+
 
         <TextView
             android:id="@+id/listasMensagem"

@@ -1,96 +1,73 @@
 #!/usr/bin/env python3
-"""Gera o icone e o banner do Android a partir do icone do app de macOS.
-
-Uma fonte so — SaimoPlayer/AppIcon.png — para as duas plataformas nao
-divergirem quando o icone mudar.
-
-O Fire TV mostra o icone de app instalado por fora da loja num quadro mais
-largo que o quadrado e corta o que passa da borda; a arte do Mac, com o cartao
-branco quase ate a borda, saia cortada dos lados. Agora o cartao fica no meio,
-com folga, sobre um fundo feito da propria arte desfocada: o que o launcher
-cortar e so fundo. Igual no icone em camadas (Android 8+), no icone legado e
-no banner das TVs.
-"""
+"""Gera o ícone e o banner da Sintonia TV sem depender de outro projeto."""
 from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
 
-from PIL import Image, ImageDraw, ImageFilter
-
-ROOT = Path(__file__).resolve().parent.parent
-SOURCE = ROOT.parent / "SaimoPlayer" / "AppIcon.png"
-RES = ROOT / "app" / "src" / "main" / "res"
-
-# Densidades legadas: o minSdk é 23, então o icone em camadas sozinho nao basta.
-DENSITIES = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
-# Banner 16:9 em mais de uma densidade: TV 4K pede o maior.
+RES = Path(__file__).resolve().parents[1] / "app/src/main/res"
+FUNDO = "#101716"
+MENTA = "#73F2BE"
+DENSIDADES = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
 BANNERS = {"xhdpi": 320, "xxhdpi": 480, "xxxhdpi": 640}
 
-# Quanto do lado menor o cartao ocupa em cada peca.
-LEGADO = 0.62
-CAMADA = 0.56  # da camada de 108dp; a area segura e 66dp
-BANNER = 0.74
+
+def simbolo(img, x, y, tamanho):
+    desenho = ImageDraw.Draw(img)
+    # Dois traços arredondados formam o S e lembram linhas de sinal.
+    curvas = (
+        (((84, 25), (65, 25), (47, 25), (36, 25)),
+         ((36, 25), (14, 25), (13, 51), (35, 51)),
+         ((35, 51), (45, 51), (55, 51), (65, 51))),
+        (((36, 51), (47, 51), (56, 51), (67, 51)),
+         ((67, 51), (89, 51), (86, 78), (64, 78)),
+         ((64, 78), (45, 78), (33, 78), (16, 78))),
+    )
+    for traco in curvas:
+        xy = []
+        for inicio, controle1, controle2, fim in traco:
+            for passo in range(25):
+                t = passo / 24
+                u = 1 - t
+                a, b = (u**3 * p + 3*u*u*t * q + 3*u*t*t * r + t**3 * s
+                        for p, q, r, s in zip(inicio, controle1, controle2, fim))
+                xy.append((x + round(a * tamanho / 100), y + round(b * tamanho / 100)))
+        grosso = max(2, round(tamanho * 0.118))
+        desenho.line(xy, fill=MENTA, width=grosso, joint="curve")
+        for a, b in (xy[0], xy[-1]):
+            raio = grosso // 2
+            desenho.ellipse((a - raio, b - raio, a + raio, b + raio), fill=MENTA)
 
 
-def cartao(art: Image.Image) -> tuple[Image.Image, tuple[int, int, int, int]]:
-    """O cartao branco (logo e "Saimo TV"), achado pelo claro no meio da arte."""
-    cinza = art.convert("L")
-    w, h = art.size
-    linha = [cinza.getpixel((x, h // 2)) for x in range(w)]
-    coluna = [cinza.getpixel((w // 2, y)) for y in range(h)]
-    x0 = next(i for i, v in enumerate(linha) if v > 200)
-    x1 = w - next(i for i, v in enumerate(reversed(linha)) if v > 200)
-    y0 = next(i for i, v in enumerate(coluna) if v > 200)
-    y1 = h - next(i for i, v in enumerate(reversed(coluna)) if v > 200)
-    card = art.crop((x0, y0, x1, y1))
-    # Cantos arredondados com 4x de resolucao para a borda sair lisa.
-    mascara = Image.new("L", (card.width * 4, card.height * 4), 0)
-    ImageDraw.Draw(mascara).rounded_rectangle(
-        (0, 0, card.width * 4 - 1, card.height * 4 - 1), radius=round(card.width * 0.76), fill=255)
-    card.putalpha(mascara.resize(card.size, Image.LANCZOS))
-    return card, (x0, y0, x1, y1)
+for densidade, lado in DENSIDADES.items():
+    pasta = RES / f"mipmap-{densidade}"
+    n = lado * 4
+    for circular in (False, True):
+        img = Image.new("RGBA", (n, n))
+        draw = ImageDraw.Draw(img)
+        if circular:
+            draw.ellipse((0, 0, n - 1, n - 1), fill=FUNDO)
+        else:
+            draw.rounded_rectangle((0, 0, n - 1, n - 1), radius=n // 5, fill=FUNDO)
+        simbolo(img, n // 8, n // 8, n * 3 // 4)
+        nome = "ic_launcher_round.png" if circular else "ic_launcher.png"
+        img.resize((lado, lado), Image.Resampling.LANCZOS).save(pasta / nome)
+    camada = round(lado * 108 / 48)
+    n = camada * 4
+    frente = Image.new("RGBA", (n, n))
+    simbolo(frente, n // 5, n // 5, n * 3 // 5)
+    frente.resize((camada, camada), Image.Resampling.LANCZOS).save(pasta / "ic_launcher_frente.png")
+    Image.new("RGB", (camada, camada), FUNDO).save(pasta / "ic_launcher_fundo.png")
 
-
-def fundo(art: Image.Image, caixa: tuple[int, int, int, int]) -> Image.Image:
-    """As cores da arte sem o cartao, desfocadas ate virar degrade."""
-    x0, y0, x1, y1 = caixa
-    sem = art.copy()
-    ImageDraw.Draw(sem).rectangle((x0 - 60, y0 - 60, x1 + 60, y1 + 60), fill=(30, 30, 70, 255))
-    return sem.filter(ImageFilter.GaussianBlur(160)).convert("RGBA")
-
-
-def compor(base: Image.Image, card: Image.Image, w: int, h: int, fracao: float) -> Image.Image:
-    img = base.resize((w, h), Image.LANCZOS)
-    lado = round(min(w, h) * fracao)
-    img.alpha_composite(card.resize((lado, lado), Image.LANCZOS), ((w - lado) // 2, (h - lado) // 2))
-    return img.convert("RGB")
-
-
-def main() -> None:
-    art = Image.open(SOURCE).convert("RGBA")
-    card, caixa = cartao(art)
-    base = fundo(art, caixa)
-
-    for density, size in DENSITIES.items():
-        folder = RES / f"mipmap-{density}"
-        folder.mkdir(parents=True, exist_ok=True)
-        icon = compor(base, card, size, size, LEGADO)
-        icon.save(folder / "ic_launcher.png")
-        icon.save(folder / "ic_launcher_round.png")
-        # Camadas de 108dp do icone adaptativo (mipmap-anydpi-v26).
-        camada = round(size * 108 / 48)
-        frente = Image.new("RGBA", (camada, camada), (0, 0, 0, 0))
-        lado = round(camada * CAMADA)
-        frente.alpha_composite(card.resize((lado, lado), Image.LANCZOS),
-                               ((camada - lado) // 2, (camada - lado) // 2))
-        frente.save(folder / "ic_launcher_frente.png")
-        base.resize((camada, camada), Image.LANCZOS).convert("RGB").save(folder / "ic_launcher_fundo.png")
-
-    for density, largura in BANNERS.items():
-        folder = RES / f"drawable-{density}"
-        folder.mkdir(parents=True, exist_ok=True)
-        compor(base, card, largura, largura * 9 // 16, BANNER).save(folder / "banner.png")
-
-    print("icones gerados")
-
-
-if __name__ == "__main__":
-    main()
+for densidade, largura in BANNERS.items():
+    w = largura * 3
+    h = w * 9 // 16
+    banner = Image.new("RGB", (w, h), FUNDO)
+    draw = ImageDraw.Draw(banner)
+    font = ImageFont.truetype("DejaVuSans-Bold.ttf", round(w * 0.078))
+    simbolo(banner, round(w * 0.08), round(h * 0.30), round(h * 0.40))
+    x = round(w * 0.32)
+    draw.text((x, h // 2), "SINTONIA", font=font, fill="white", anchor="lm")
+    x += round(draw.textlength("SINTONIA ", font=font))
+    assert x + draw.textlength("TV", font=font) < w * 0.94
+    draw.text((x, h // 2), "TV", font=font, fill=MENTA, anchor="lm")
+    banner.resize((largura, largura * 9 // 16), Image.Resampling.LANCZOS).save(
+        RES / f"drawable-{densidade}" / "banner.png")

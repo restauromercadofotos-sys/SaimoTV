@@ -4,5 +4,5 @@ pluginManagement {
 dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
-rootProject.name = "Saimo TV"
+rootProject.name = "Sintonia TV"
 include(":app")

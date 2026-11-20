@@ -17,7 +17,7 @@
         android:contentDescription="@null"
         android:scaleType="centerCrop" />
 
-    <br.com.saimo.tv.Aurora
+    <br.com.sintonia.tv.Aurora
         android:id="@+id/radioAurora"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
@@ -122,7 +122,7 @@
                 android:textColor="@color/accent"
                 android:textSize="22sp" />
 
-            <br.com.saimo.tv.Equalizador
+            <br.com.sintonia.tv.Equalizador
                 android:id="@+id/radioEqualizador"
                 android:layout_width="match_parent"
                 android:layout_height="96dp"

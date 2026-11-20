@@ -11,8 +11,7 @@
     <FrameLayout
         android:id="@+id/inicioFundoGrupo"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:alpha="0">
+        android:layout_height="match_parent">
         <ImageView
             android:id="@+id/inicioFundo"
             android:layout_width="match_parent"
@@ -73,7 +72,7 @@
                 android:textSize="16sp" />
         </LinearLayout>
 
-        <br.com.saimo.tv.ListaSemFuga
+        <br.com.sintonia.tv.ListaSemFuga
             android:id="@+id/inicioFilas"
             android:layout_width="match_parent"
             android:layout_height="0dp"
@@ -84,18 +83,4 @@
             android:paddingBottom="120dp" />
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/escolhaStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="28dp"
-        android:background="@drawable/bg_card"
-        android:paddingStart="18dp"
-        android:paddingTop="8dp"
-        android:paddingEnd="18dp"
-        android:paddingBottom="8dp"
-        android:textColor="@color/text_primary"
-        android:textSize="15sp"
-        android:visibility="gone" />
 </FrameLayout>
