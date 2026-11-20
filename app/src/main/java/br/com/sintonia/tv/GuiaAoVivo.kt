@@ -2,6 +2,7 @@ package br.com.sintonia.tv
 
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
@@ -25,8 +26,8 @@ internal class GuiaAoVivo(
     private val favoritar: (String) -> Unit,
 ) {
     private val contexto = raiz.context
-    private val formatoDia = SimpleDateFormat("EEE, dd/MM", Locale("pt", "BR"))
-    private val hora = SimpleDateFormat("HH:mm", Locale("pt", "BR"))
+    private val formatoDia = SimpleDateFormat("EEE, dd/MM", Locale.forLanguageTag("pt-BR"))
+    private val hora = SimpleDateFormat("HH:mm", Locale.forLanguageTag("pt-BR"))
     private val painel = LinearLayout(contexto).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(dp(24), dp(20), dp(24), dp(20))
@@ -41,9 +42,9 @@ internal class GuiaAoVivo(
     private var grade = emptyList<Programme>()
     private var programas = emptyList<Programme>()
     private val secoes = Coluna(0, 0.85f)
-    private val lista = Coluna(1, 1.35f)
-    private val datas = Coluna(2, 0.60f)
-    private val guia = Coluna(3, 1.50f)
+    private val lista = Coluna(1, 1.10f)
+    private val datas = Coluna(2, 0.46f)
+    private val guia = Coluna(3, 1.80f)
     private var coluna = lista
     private val ocultar = Runnable { fechar() }
 
@@ -148,6 +149,7 @@ internal class GuiaAoVivo(
         secoes.caixa.visibility = if (coluna == secoes) View.VISIBLE else View.GONE
         datas.caixa.visibility = if (coluna == secoes || dias.isEmpty()) View.GONE else View.VISIBLE
         guia.caixa.visibility = if (coluna == secoes) View.GONE else View.VISIBLE
+        detalhe()
         for (painel in listOf(secoes, lista, datas, guia)) {
             if (painel.posicao in painel.itens.indices) painel.adapter.notifyItemChanged(painel.posicao)
             painel.lista.scrollToPosition(painel.posicao)
@@ -184,7 +186,7 @@ internal class GuiaAoVivo(
         programas = grade.filter { formatoDia.format(Date(it.start)) == dia }
         val agora = System.currentTimeMillis()
         guia.mostrar("Programação", programas.map {
-            Linha(it.title, "${horario(it)}${if (it.isOnAir(agora)) "  ·  Ao vivo" else ""}")
+            Linha(it.title, horario = horario(it), noAr = it.isOnAir(agora))
         }, programas.indexOfFirst { it.start == inicio }.takeIf { it >= 0 }
             ?: programas.indexOfFirst { it.isOnAir(agora) }.takeIf { it >= 0 }
             ?: programas.indexOfFirst { it.start >= agora })
@@ -196,21 +198,30 @@ internal class GuiaAoVivo(
 
     private fun detalhe() {
         val programa = programas.getOrNull(guia.posicao)
-        guia.detalhe.text = programa?.let {
-            listOfNotNull(it.title, horario(it), it.description?.takeIf(String::isNotBlank)).joinToString("\n")
-        } ?: "Programação indisponível"
-        guia.detalhe.visibility = View.VISIBLE
+        guia.detalheTitulo.text = programa?.title ?: "Programação indisponível"
+        val sinopse = programa?.description?.trim().orEmpty()
+        guia.detalhe.text = sinopse
+        guia.detalheTitulo.visibility = if (programa == null || coluna == guia) View.VISIBLE else View.GONE
+        guia.detalhe.visibility = if (coluna == guia && sinopse.isNotEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun dp(valor: Int) = (valor * contexto.resources.displayMetrics.density).toInt()
 
     private fun texto(tamanho: Float, cor: Int = Color.WHITE) = TextView(contexto).apply {
         textSize = tamanho
+        includeFontPadding = false
+        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
         setTextColor(cor)
         ellipsize = TextUtils.TruncateAt.END
     }
 
-    private data class Linha(val texto: String, val detalhe: String = "", val numero: String = "", val logo: String? = null)
+    private data class Linha(
+        val texto: String,
+        val numero: String = "",
+        val logo: String? = null,
+        val horario: String = "",
+        val noAr: Boolean = false,
+    )
 
     private inner class Coluna(private val id: Int, peso: Float) {
         val caixa = LinearLayout(contexto).apply {
@@ -222,9 +233,16 @@ internal class GuiaAoVivo(
             maxLines = 1
             gravity = Gravity.CENTER_VERTICAL
         }
-        val detalhe = texto(14f).apply {
-            maxLines = 5
-            setPadding(dp(8), dp(4), dp(8), dp(12))
+        val detalheTitulo = texto(16f).apply {
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            maxLines = 2
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            visibility = View.GONE
+        }
+        val detalhe = texto(13f, 0xffbaccc6.toInt()).apply {
+            maxLines = 3
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setPadding(dp(12), 0, dp(12), dp(12))
             visibility = View.GONE
         }
         val lista = RecyclerView(contexto).apply {
@@ -237,25 +255,27 @@ internal class GuiaAoVivo(
         var posicao = 0
         val adapter = object : RecyclerView.Adapter<LinhaHolder>() {
             override fun getItemCount() = itens.size
-            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = LinhaHolder(id == 1)
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = LinhaHolder(id == 1, id == 3)
             override fun onBindViewHolder(holder: LinhaHolder, position: Int) {
                 val item = itens[position]
                 val selecionado = position == posicao
                 holder.raiz.isSelected = selecionado
                 val ativo = selecionado && coluna == this@Coluna
-                holder.raiz.setBackgroundColor(when {
-                    ativo -> 0xff73f2be.toInt()
-                    selecionado -> 0xff263c34.toInt()
-                    else -> Color.TRANSPARENT
-                })
+                holder.raiz.background = when {
+                    ativo -> holder.foco
+                    selecionado -> holder.selecao
+                    else -> null
+                }
                 val cor = if (ativo) 0xff10221a.toInt() else Color.WHITE
+                val secundaria = if (ativo) 0xff234839.toInt() else 0xffb2c6bd.toInt()
                 holder.titulo.text = item.texto
                 holder.titulo.setTextColor(cor)
-                holder.subtitulo.text = item.detalhe
-                holder.subtitulo.setTextColor(cor)
-                holder.subtitulo.visibility = if (item.detalhe.isEmpty()) View.GONE else View.VISIBLE
+                holder.horario.text = item.horario
+                holder.horario.setTextColor(secundaria)
+                holder.aoVivo.visibility = if (item.noAr) View.VISIBLE else View.GONE
+                holder.aoVivo.setTextColor(if (ativo) 0xff10221a.toInt() else 0xff73f2be.toInt())
                 holder.numero.text = item.numero
-                holder.numero.setTextColor(cor)
+                holder.numero.setTextColor(secundaria)
                 if (id == 1) holder.logo.load(item.logo)
                 holder.raiz.setOnClickListener {
                     val indice = holder.bindingAdapterPosition
@@ -271,6 +291,7 @@ internal class GuiaAoVivo(
         init {
             painel.addView(caixa, LinearLayout.LayoutParams(0, -1, peso))
             caixa.addView(titulo, LinearLayout.LayoutParams(-1, dp(32)))
+            caixa.addView(detalheTitulo, LinearLayout.LayoutParams(-1, -2))
             caixa.addView(detalhe, LinearLayout.LayoutParams(-1, -2))
             caixa.addView(lista, LinearLayout.LayoutParams(-1, 0, 1f))
             lista.adapter = adapter
@@ -286,25 +307,38 @@ internal class GuiaAoVivo(
         }
     }
 
-    private inner class LinhaHolder(comLogo: Boolean) : RecyclerView.ViewHolder(LinearLayout(contexto)) {
+    private inner class LinhaHolder(comLogo: Boolean, comHorario: Boolean) :
+        RecyclerView.ViewHolder(LinearLayout(contexto)) {
         val raiz = itemView as LinearLayout
-        val titulo = texto(16f).apply { maxLines = 1 }
-        val subtitulo = texto(12f).apply { maxLines = 1 }
-        val numero = texto(12f).apply { gravity = Gravity.CENTER_VERTICAL }
+        val foco = GradientDrawable().apply { setColor(0xff73f2be.toInt()); cornerRadius = dp(6).toFloat() }
+        val selecao = GradientDrawable().apply { setColor(0xff263c34.toInt()); cornerRadius = dp(6).toFloat() }
+        val titulo = texto(if (comHorario) 15f else 16f).apply {
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            maxLines = if (comHorario) 2 else 1
+        }
+        val horario = texto(12f).apply { maxLines = 1; fontFeatureSettings = "'tnum'" }
+        val aoVivo = texto(11f).apply { text = "Ao vivo"; maxLines = 1 }
+        val numero = texto(12f).apply {
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            fontFeatureSettings = "'tnum'"
+        }
         val logo = ImageView(contexto).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
 
         init {
-            raiz.layoutParams = RecyclerView.LayoutParams(-1, dp(40))
+            raiz.layoutParams = RecyclerView.LayoutParams(-1, dp(if (comHorario) 52 else 40))
             raiz.gravity = Gravity.CENTER_VERTICAL
-            raiz.setPadding(dp(8), 0, dp(8), 0)
+            raiz.setPadding(dp(12), 0, dp(12), 0)
             if (comLogo) {
-                raiz.addView(numero, LinearLayout.LayoutParams(dp(32), -1))
-                raiz.addView(logo, LinearLayout.LayoutParams(dp(32), dp(28)).apply { marginEnd = dp(8) })
+                raiz.addView(numero, LinearLayout.LayoutParams(dp(26), -1).apply { marginEnd = dp(10) })
+                raiz.addView(logo, LinearLayout.LayoutParams(dp(32), dp(26)).apply { marginEnd = dp(10) })
             }
-            val rotulos = LinearLayout(contexto).apply { orientation = LinearLayout.VERTICAL }
-            rotulos.addView(titulo)
-            rotulos.addView(subtitulo)
-            raiz.addView(rotulos, LinearLayout.LayoutParams(0, -2, 1f))
+            if (comHorario) {
+                val faixa = LinearLayout(contexto).apply { orientation = LinearLayout.VERTICAL }
+                faixa.addView(horario)
+                faixa.addView(aoVivo, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+                raiz.addView(faixa, LinearLayout.LayoutParams(dp(88), -2).apply { marginEnd = dp(8) })
+            }
+            raiz.addView(titulo, LinearLayout.LayoutParams(0, -2, 1f))
         }
     }
 }

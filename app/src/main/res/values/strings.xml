@@ -80,7 +80,7 @@
     <string name="busca_sem_canal">Nenhum canal encontrado para %1$s</string>
     <string name="menu_buscar">Buscar</string>
     <string name="menu_ajustes">Ajustes</string>
-    <string name="menu_eventos">Eventos</string>
+    <string name="menu_eventos">Esportes</string>
     <string name="inicio_canal_agora">agora: %1$s</string>
     <string name="radios_recentes">Ouvidas por último</string>
     <string name="eventos_ao_vivo">Ao vivo agora</string>
@@ -91,10 +91,10 @@
     <string name="eventos_amanha_as">amanhã %1$s</string>
     <string name="eventos_dica">No canal %1$s · OK assiste</string>
     <string name="eventos_erro">Não deu para carregar a agenda agora. Tentando de novo em instantes.</string>
-    <string name="eventos_nenhum">Nenhum jogo nos canais da lista agora. A agenda se atualiza sozinha.</string>
+    <string name="eventos_nenhum">Nenhum evento esportivo disponível agora. A agenda se atualiza sozinha.</string>
     <plurals name="eventos_resumo">
-        <item quantity="one">%1$d jogo nos canais da lista · %2$d ao vivo</item>
-        <item quantity="other">%1$d jogos nos canais da lista · %2$d ao vivo</item>
+        <item quantity="one">%1$d evento · %2$d no ar</item>
+        <item quantity="other">%1$d eventos · %2$d no ar</item>
     </plurals>
     <string name="radio_ao_vivo">AO VIVO</string>
     <string name="radio_dica_tocando">cima e baixo trocam de estação · esquerda ou VOLTAR mostram todas as rádios</string>

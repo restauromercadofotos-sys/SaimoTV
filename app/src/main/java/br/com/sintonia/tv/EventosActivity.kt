@@ -2,10 +2,7 @@ package br.com.sintonia.tv
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.View
 import android.widget.ImageView
-import android.widget.TextView
-import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
 import androidx.recyclerview.widget.RecyclerView
@@ -42,10 +39,11 @@ class EventosActivity : TelaComEstadoVazio() {
         val estado: String = "",
         val placar: String = "",
         val tempo: String = "",
+        val nomeEvento: String = "",
     ) {
-        val titulo get() = "$casa x $fora"
-        fun aoVivo(agora: Long) = estado == "in" || (estado != "post" && agora in inicio..fim)
-        fun acabou(agora: Long) = estado == "post" || agora > fim
+        val titulo get() = nomeEvento.ifBlank { "$casa x $fora" }
+        fun aoVivo(agora: Long) = estado == "in" || (estado.isEmpty() && agora in inicio until fim)
+        fun acabou(agora: Long) = estado == "post" || (estado != "in" && agora >= fim)
     }
 
     private lateinit var filas: RecyclerView
@@ -79,6 +77,7 @@ class EventosActivity : TelaComEstadoVazio() {
                     if (Remote.channels.isEmpty()) Remote.refresh(this@EventosActivity)
                 }
             }
+            launch { if (Epg.channelsWithGuide == 0) Epg.load(this@EventosActivity) {} }
             esconderVazio()
             while (isActive) {
                 val jogos = withContext(Dispatchers.IO) { runCatching { buscar() }.getOrNull() }
@@ -142,10 +141,11 @@ class EventosActivity : TelaComEstadoVazio() {
     private fun cartao(j: Jogo, agora: Long): Inicio.Cartao {
         val aoVivo = j.aoVivo(agora)
         val quando = quando(j.inicio, agora)
-        val selo = if (aoVivo) listOf(getString(R.string.radio_ao_vivo), j.placar).filter { it.isNotBlank() }.joinToString("  ")
+        val rotuloNoAr = if (j.estado.isEmpty()) "No ar" else getString(R.string.radio_ao_vivo)
+        val selo = if (aoVivo) listOf(rotuloNoAr, j.placar).filter { it.isNotBlank() }.joinToString("  ")
                    else quando
         val meta = listOf(j.liga,
-            if (aoVivo) listOf(getString(R.string.radio_ao_vivo), j.placar, j.tempo).filter { it.isNotBlank() }.joinToString(" ")
+            if (aoVivo) listOf(rotuloNoAr, j.placar, j.tempo).filter { it.isNotBlank() }.joinToString(" ")
             else quando,
         ).filter { it.isNotBlank() }.joinToString("  ·  ")
         return Inicio.Cartao(
@@ -208,28 +208,66 @@ class EventosActivity : TelaComEstadoVazio() {
     }.getOrNull()
 
     private suspend fun buscar(): List<Jogo>? {
-        val respostas = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        val respostas = java.util.concurrent.ConcurrentLinkedQueue<Pair<String, String>>()
+        val formato = SimpleDateFormat("yyyyMMdd", Locale.ROOT)
+        val ate = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 7) }
+        val desde = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+        val periodo = "${formato.format(desde.time)}-${formato.format(ate.time)}"
         val pedidos = ESPN.map { liga ->
             ESCOPO_ESPN.async {
-                texto("https://site.api.espn.com/apis/site/v2/sports/$liga/scoreboard")?.let { respostas += it }
+                texto("https://site.api.espn.com/apis/site/v2/sports/$liga/scoreboard?dates=$periodo")
+                    ?.let { respostas += liga to it }
             }
         }
         kotlinx.coroutines.withTimeoutOrNull(6_000) { pedidos.awaitAll() }
         val recebidas = respostas.toList()
-        if (recebidas.isEmpty()) return null
-        val canais = MinhasListas.somar(Remote.channels, false).associateBy { chaveCanal(it.name) }
-        return recebidas.flatMap { lerEspn(it, canais) }.distinctBy { it.titulo to it.inicio }
+        val canais = MinhasListas.canaisDaTela()
+        val porNome = canais.associateBy { chaveCanal(it.name) }
+        val agora = System.currentTimeMillis()
+        val daGrade = canais.flatMap { canal ->
+            Epg.schedule(canal.name).mapNotNull { programa ->
+                val esporte = modalidadeDaGrade(programa, canal) ?: return@mapNotNull null
+                if (programa.stop <= agora || programa.start > ate.timeInMillis) return@mapNotNull null
+                Jogo("", "", "", "", esporte, "", programa.start, programa.stop, canal, nomeEvento = programa.title)
+            }
+        }
+        if (recebidas.isEmpty() && daGrade.isEmpty()) return null
+        val daAgenda = recebidas.flatMap { (liga, corpo) -> lerEspn(corpo, porNome, liga == "racing/f1") }
+        return (daGrade + daAgenda).distinctBy { Triple(it.titulo, it.inicio, it.canal?.name) }
+            .filter { evento -> evento.canal != null || daGrade.none { it.titulo == evento.titulo && it.inicio == evento.inicio } }
     }
 
     private fun chaveCanal(nome: String): String = nome.trim().lowercase(Locale.ROOT)
         .replace(Regex(" *(?:fhd|uhd|hd|sd|4k)$"), "").trimEnd()
 
-    private fun lerEspn(corpo: String, canais: Map<String, Channel>): List<Jogo> = runCatching {
+    private fun lerEspn(corpo: String, canais: Map<String, Channel>, formula1: Boolean): List<Jogo> = runCatching {
         val json = JSONObject(corpo)
         val liga = json.optJSONArray("leagues")?.optJSONObject(0)
         val ligaLogo = liga?.optJSONArray("logos")?.optJSONObject(0)?.optString("href").orEmpty()
         val eventos = json.optJSONArray("events") ?: return@runCatching emptyList()
-        val data = SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+
+        if (formula1) return@runCatching (0 until eventos.length()).flatMap { i ->
+            val evento = eventos.getJSONObject(i)
+            val sessoes = evento.optJSONArray("competitions")
+            (0 until (sessoes?.length() ?: 0)).mapNotNull { j ->
+                val sessao = sessoes?.optJSONObject(j) ?: return@mapNotNull null
+                val inicio = instanteEspn(sessao.optString("date")) ?: return@mapNotNull null
+                val tipo = sessao.optJSONObject("type")?.optString("abbreviation").orEmpty()
+                val rotulo = when (tipo) {
+                    "FP1" -> "Treino livre 1"
+                    "FP2" -> "Treino livre 2"
+                    "FP3" -> "Treino livre 3"
+                    "Qual" -> "Classificação"
+                    "Race" -> "Corrida"
+                    "Sprint" -> "Sprint"
+                    "SprintQual" -> "Classificação da sprint"
+                    else -> tipo.ifBlank { return@mapNotNull null }
+                }
+                val estado = sessao.optJSONObject("status")?.optJSONObject("type")?.optString("state").orEmpty()
+                Jogo("", "", "", "", "Fórmula 1", ligaLogo, inicio, inicio + 2 * 3_600_000L,
+                    canalDaCompeticao(sessao, canais), estado = estado, nomeEvento = "${evento.optString("name")} · $rotulo")
+            }
+        }
         (0 until eventos.length()).mapNotNull { i ->
             runCatching {
                 val ev = eventos.getJSONObject(i)
@@ -243,12 +281,8 @@ class EventosActivity : TelaComEstadoVazio() {
                 val ca = casa ?: return@runCatching null; val fo = fora ?: return@runCatching null
                 val status = ev.optJSONObject("status")?.optJSONObject("type")
                 val estado = status?.optString("state").orEmpty()
-                val inicio = data.parse(ev.optString("date"))?.time ?: return@runCatching null
-                val emissoras = competicao.optJSONArray("broadcasts")
-                val canal = (0 until (emissoras?.length() ?: 0)).asSequence()
-                    .mapNotNull { emissoras?.optJSONObject(it)?.optJSONArray("names") }
-                    .flatMap { nomes -> (0 until nomes.length()).asSequence().map { nomes.optString(it) } }
-                    .mapNotNull { canais[chaveCanal(it)] }.firstOrNull()
+                val inicio = instanteEspn(ev.optString("date")) ?: return@runCatching null
+                val canal = canalDaCompeticao(competicao, canais)
                 Jogo(
                     ca.getJSONObject("team").optString("name"), fo.getJSONObject("team").optString("name"),
                     ca.getJSONObject("team").optString("logo"), fo.getJSONObject("team").optString("logo"),
@@ -260,6 +294,23 @@ class EventosActivity : TelaComEstadoVazio() {
         }
     }.getOrDefault(emptyList())
 
+    private fun instanteEspn(data: String): Long? =
+        runCatching {
+            val padrao = if (data.length == 17) "yyyy-MM-dd'T'HH:mm'Z'" else "yyyy-MM-dd'T'HH:mm:ss'Z'"
+            SimpleDateFormat(padrao, Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+                isLenient = false
+            }.parse(data)?.time
+        }.getOrNull()
+
+    private fun canalDaCompeticao(competicao: JSONObject, canais: Map<String, Channel>): Channel? {
+        val emissoras = competicao.optJSONArray("broadcasts")
+        return (0 until (emissoras?.length() ?: 0)).asSequence()
+            .mapNotNull { emissoras?.optJSONObject(it)?.optJSONArray("names") }
+            .flatMap { nomes -> (0 until nomes.length()).asSequence().map { nomes.optString(it) } }
+            .mapNotNull { canais[chaveCanal(it)] }.firstOrNull()
+    }
+
     private companion object {
         val ESCOPO_ESPN = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
         val ESPN = listOf(
@@ -267,7 +318,24 @@ class EventosActivity : TelaComEstadoVazio() {
             "soccer/conmebol.sudamericana", "soccer/uefa.champions", "soccer/uefa.europa", "soccer/eng.1",
             "soccer/esp.1", "soccer/ita.1", "soccer/ger.1", "soccer/fra.1", "soccer/por.1", "soccer/ned.1",
             "soccer/arg.1", "soccer/ksa.1", "soccer/fifa.world", "soccer/fifa.worldq.conmebol",
-            "basketball/nba", "football/nfl", "baseball/mlb", "hockey/nhl", "mma/ufc",
+            "basketball/nba", "basketball/wnba", "racing/f1", "football/nfl", "baseball/mlb", "hockey/nhl", "mma/ufc",
         )
     }
+}
+
+
+private val esportesNaGrade = listOf(
+    Regex("""\b(?:f[oó]rmula ?1|f1)\b""", RegexOption.IGNORE_CASE) to "Fórmula 1",
+    Regex("""\b(?:v[oô]lei(?:bol)?|volleyball)\b""", RegexOption.IGNORE_CASE) to "Vôlei",
+    Regex("""\b(?:basquete(?:bol)?|basketball|wnba|nba|nbb)\b""", RegexOption.IGNORE_CASE) to "Basquete",
+    Regex("""\b(?:futebol|soccer|brasileir[aã]o|libertadores)\b""", RegexOption.IGNORE_CASE) to "Futebol",
+)
+
+internal fun modalidadeDaGrade(programa: Programme, canal: Channel): String? {
+    val texto = "${programa.title} ${programa.category}"
+    return esportesNaGrade.firstOrNull { (padrao, _) -> padrao.containsMatchIn(texto) }?.second
+        ?: "Esportes".takeIf {
+            Categorias.de(canal).equals("Esportes", ignoreCase = true) &&
+                Regex("""\s(?:x|vs\.?)\s""", RegexOption.IGNORE_CASE).containsMatchIn(programa.title)
+        }
 }
