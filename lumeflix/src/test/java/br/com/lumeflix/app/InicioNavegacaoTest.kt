@@ -24,6 +24,14 @@ class InicioNavegacaoTest {
         assertEquals(listOf(continuar), organizar(continuar))
     }
 
+    @Test fun `ranking limita dez posicoes e preserva a ordem da fonte`() {
+        val cartoes = (1..13).map { Inicio.Cartao("Filme $it", "", "") {} }
+        val fila = Inicio.Fila("Top 10 filmes em alta hoje", cartoes, comFichas = false)
+        val ranking = Inicio.organizarCatalogo(listOf(fila), continuar).single().cartoes
+        assertEquals((1..10).toList(), ranking.map { it.ranking })
+        assertEquals(cartoes.take(10).map { it.titulo }, ranking.map { it.titulo })
+    }
+
     @Test fun `mantem a coluna ao subir ou descer`() {
         assertEquals(3, Inicio.indiceNaFilaVertical(indiceAtual = 3, totalDestino = 8))
     }

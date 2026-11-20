@@ -8,7 +8,6 @@ import android.view.ViewGroup
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
-import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -76,6 +75,7 @@ class Destaque(
     private var fundoAtual: String? = null
 
     fun padrao(tituloPadrao: String, metaPadrao: String) {
+        cartaoAtual = null
         trabalho?.cancel()
         trailerJob?.cancel()
         pararTrailer()
@@ -92,16 +92,8 @@ class Destaque(
         trabalho?.cancel()
         trailerJob?.cancel()
         pararTrailer()
-        val trailer = cartao.trailer?.takeIf { TRAILER_DIRETO.matches(it) }
-        if (cartao.alvo != null) {
-            trailerJob = escopo.launch(semDerrubar) {
-                delay(5_000)
-                val vida = (tela as LifecycleOwner).lifecycle
-                if (!vida.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
-                val url = trailer ?: trechoDoCatalogo(cartao.alvo) ?: return@launch
-                if (vida.currentState.isAtLeast(Lifecycle.State.RESUMED)) iniciarTrailer(url)
-            }
-        }
+        cartaoAtual = cartao
+        aguardarPrevia()
         logoTitulo.dispose()
         logoTitulo.visibility = View.GONE
         val alvo = cartao.alvo
@@ -166,6 +158,24 @@ class Destaque(
         }
     }
 
+    private var cartaoAtual: Inicio.Cartao? = null
+
+    fun aguardarPrevia() {
+        trailerJob?.cancel()
+        pararTrailer()
+        val cartao = cartaoAtual ?: return
+        val trailer = cartao.trailer?.takeIf { TRAILER_DIRETO.matches(it) }
+        if (cartao.alvo != null) {
+            trailerJob = escopo.launch(semDerrubar) {
+                delay(5_000)
+                val vida = (tela as LifecycleOwner).lifecycle
+                if (!vida.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
+                val url = trailer ?: trechoDoCatalogo(cartao.alvo) ?: return@launch
+                if (vida.currentState.isAtLeast(Lifecycle.State.RESUMED)) iniciarTrailer(url)
+            }
+        }
+    }
+
     private suspend fun trechoDoCatalogo(alvo: Alvo): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val item = Vod.Achado(alvo.titulo, alvo.serie, alvo.letra, alvo.ano)
         if (!alvo.serie) {
@@ -182,6 +192,7 @@ class Destaque(
     }
 
     fun suspender() {
+        cartaoAtual = null
         trabalho?.cancel()
         trailerJob?.cancel()
         pararTrailer()
