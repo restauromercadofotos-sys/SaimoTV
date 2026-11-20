@@ -69,7 +69,7 @@ object CanalNaTv {
                 if (series) ajudante.publishDefaultChannel(canal) else ajudante.publishChannel(canal)
             }
             check(id >= 0) { "Canal de prévia recusado pelo provedor" }
-            if (antigo == null) prefs.edit().putLong(chave, id).remove("quando_$chave").apply()
+            if (antigo == null) prefs.edit().putLong(chave, id).remove("paisagem_$chave").apply()
             else if (antigo.displayName.toString() != titulo || antigo.internalProviderId != chave) {
                 context.contentResolver.update(TvContractCompat.buildChannelUri(id), android.content.ContentValues().apply {
                     put(TvContractCompat.Channels.COLUMN_DISPLAY_NAME, titulo)
@@ -79,7 +79,7 @@ object CanalNaTv {
             Triple(series, chave, id)
         }
         val pendentes = canais.filter { (_, chave, _) ->
-            System.currentTimeMillis() - prefs.getLong("quando_$chave", 0L) >= VALIDADE_MS
+            System.currentTimeMillis() - prefs.getLong("paisagem_$chave", 0L) >= VALIDADE_MS
         }
         if (pendentes.isEmpty()) return true
         val filas = Destaques.filas(context)
@@ -93,6 +93,8 @@ object CanalNaTv {
             val operacoes = arrayListOf(ContentProviderOperation.newDelete(
                 TvContractCompat.buildPreviewProgramsUriForChannel(canal)).build())
             itens.forEachIndexed { i, item ->
+                val ficha = Detalhes.de(item.titulo, item.serie)
+                val arte = ficha?.arteLauncher ?: ficha?.fundo ?: return@forEachIndexed
                 val alvo = Alvo(item.titulo, item.serie, item.letra, item.ano,
                     if (item.daColecao) item.colecao else "")
                 val programa = PreviewProgram.Builder().setChannelId(canal)
@@ -100,17 +102,19 @@ object CanalNaTv {
                     .setTitle(Generos.semAno(item.titulo)).setWeight(1000 - i)
                     .setIntentUri(Links.ficha(alvo)).setInternalProviderId(item.titulo)
                     .apply {
-                        if (item.capa.isNotBlank()) {
-                            setPosterArtUri(Uri.parse(item.capa))
-                            setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_MOVIE_POSTER)
-                        }
+                        setPosterArtUri(Uri.parse(arte))
+                        setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9)
                         item.ano.toIntOrNull()?.let { setReleaseDate(it.toString()) }
                     }.build()
                 operacoes += ContentProviderOperation.newInsert(TvContractCompat.PreviewPrograms.CONTENT_URI)
                     .withValues(programa.toContentValues()).build()
             }
+            if (operacoes.size == 1) {
+                completo = false
+                continue
+            }
             context.contentResolver.applyBatch(TvContractCompat.AUTHORITY, operacoes)
-            prefs.edit().putLong("quando_$chave", System.currentTimeMillis()).apply()
+            prefs.edit().putLong("paisagem_$chave", System.currentTimeMillis()).apply()
         }
         return completo
     }

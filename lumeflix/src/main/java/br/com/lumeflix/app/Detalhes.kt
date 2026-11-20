@@ -50,6 +50,7 @@ object Detalhes {
         val capa: String? = null,
         /** A imagem larga do título, para o fundo da ficha. */
         val fundo: String? = null,
+        val arteLauncher: String? = null,
         /** Quantas temporadas a série tem, segundo o TMDB. */
         val temporadas: Int? = null,
         /** A logo do título (PNG transparente), em português quando há. */
@@ -194,6 +195,14 @@ object Detalhes {
             // degradê, e um TV Box de 1 GB não precisa decodificar 4K para isso.
             fundo = json.optString("backdrop_path").takeIf { it.isNotBlank() && it != "null" }
                 ?.let { IMAGENS + "w780" + it },
+            arteLauncher = json.optJSONObject("images")?.optJSONArray("backdrops")?.let { imagens ->
+                sequenceOf("pt", "en").firstNotNullOfOrNull { idioma ->
+                    (0 until imagens.length()).asSequence().mapNotNull { imagens.optJSONObject(it) }
+                        .firstOrNull { it.optString("iso_639_1") == idioma &&
+                            it.optString("file_path").startsWith("/") && it.optDouble("aspect_ratio") in 1.75..1.81 }
+                        ?.let { IMAGENS + "w780" + it.getString("file_path") }
+                }
+            },
             temporadas = if (serie) json.optInt("number_of_seasons").takeIf { it > 0 } else null,
             logo = logoDe(json),
         )
