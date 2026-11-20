@@ -128,6 +128,7 @@
     <string name="guide_info">%1$d de %2$d canais com guia</string>
     <string name="channel_number">Canal %1$s…</string>
     <string name="times">%1$s – %2$s · faltam %3$d min</string>
+    <string name="banner_agora">Agora: %1$s</string>
     <string name="up_next">A seguir: %1$s</string>
     <string name="faixas_titulo">Qualidade, áudio e legendas</string>
     <string name="faixa_qualidade">Qualidade da imagem</string>
@@ -369,7 +370,7 @@
     <string name="fora_titulo">%1$s está fora do ar agora</string>
     <string name="fora_sub">Nenhum servidor respondeu. Tentamos de novo sozinhos daqui a pouco.</string>
     <string name="fora_ir">Ir para %1$s</string>
-    <string name="banner_dica">OK fontes · esquerda canais · segure OK opções · direita guia · cima/baixo troca</string>
+    <string name="banner_dica">OK canais · segure OK para opções · ↑/↓ troca de canal</string>
     <string name="faixas_so_uma">Este vídeo tem só um áudio e nenhuma legenda.</string>
     <string name="inicio_dica">OK abre · segure OK num título para favoritar e mais opções · VOLTAR vai ao menu</string>
     <string name="previa_sem_guia">Sem programação disponível</string>
