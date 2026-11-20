@@ -122,6 +122,9 @@ class SegundaTela(
             player?.volume = if (valor) 1f else 0f
         }
 
+    private val repeticaoAoVivo = RepeticaoAoVivo { avancar() }
+    private val recuperar = Runnable { recuperarInterrupcao() }
+
     private val prazo = Runnable {
         Log.w("SaimoTV", "segunda tela: sem imagem em ${PRAZO_MS / 1000} s")
         avancar()
@@ -155,6 +158,7 @@ class SegundaTela(
         novo.volume = if (comSom) 1f else 0f
         novo.playWhenReady = true
         novo.addListener(ouvinte)
+        novo.addAnalyticsListener(repeticaoAoVivo)
         Upscaling.aplicar(novo)
         AudioInteligente.aplicar(novo)
         player = novo
@@ -178,6 +182,8 @@ class SegundaTela(
     /** Tira o canal (ex.: ele sumiu da lista) e volta a pedir um. */
     fun limpar() {
         handler.removeCallbacks(prazo)
+        handler.removeCallbacks(recuperar)
+        repeticaoAoVivo.reiniciar(false)
         canal = null
         player?.stop()
         player?.clearMediaItems()
@@ -201,6 +207,8 @@ class SegundaTela(
         val atual = canal ?: return
         val p = player ?: return
         val origem = atual.sources.getOrNull(indice) ?: return
+        handler.removeCallbacks(recuperar)
+        repeticaoAoVivo.reiniciar(origem.isHls)
         fonte = indice
         tocou = false
         if (!retomando) retomadas = 0
@@ -221,6 +229,8 @@ class SegundaTela(
             return
         }
         handler.removeCallbacks(prazo)
+        handler.removeCallbacks(recuperar)
+        repeticaoAoVivo.reiniciar(false)
         player?.stop()
         if (falhasDeDecodificador >= atual.sources.size) {
             semSuporte()
@@ -239,15 +249,17 @@ class SegundaTela(
             when (state) {
                 Player.STATE_READY -> {
                     tocou = true
-                    retomadas = 0
                     falhasDeDecodificador = 0
                     handler.removeCallbacks(prazo)
+                    handler.removeCallbacks(recuperar)
                     aviso.visibility = View.GONE
                     Connect.notificarMudancaDeEstado()
                 }
-                // Ao vivo não termina: fim de arquivo é a conexão que fechou
-                // sem erro. Reabre a mesma fonte.
-                Player.STATE_ENDED -> if (tocou) abrir(fonte, retomando = true)
+                Player.STATE_ENDED -> recuperarInterrupcao()
+                Player.STATE_BUFFERING -> if (tocou) {
+                    handler.removeCallbacks(recuperar)
+                    handler.postDelayed(recuperar, PRAZO_MS)
+                }
                 else -> Unit
             }
         }
@@ -269,11 +281,16 @@ class SegundaTela(
             }
             // Estava tocando: tropeço de rede, retoma a mesma antes de trocar.
             val ficouParaTras = error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
-            if ((tocou || ficouParaTras) && retomadas < RETOMADAS_MAX) {
-                retomadas++
-                abrir(fonte, retomando = true)
-                return
-            }
+            handler.removeCallbacks(recuperar)
+            if (tocou || ficouParaTras) recuperarInterrupcao() else avancar()
+        }
+    }
+
+    private fun recuperarInterrupcao() {
+        if (retomadas < RETOMADAS_MAX) {
+            retomadas++
+            abrir(fonte, retomando = true)
+        } else {
             avancar()
         }
     }

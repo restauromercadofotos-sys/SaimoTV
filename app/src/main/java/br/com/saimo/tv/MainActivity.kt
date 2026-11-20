@@ -116,6 +116,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
     private lateinit var bannerProgress: ProgressBar
     private lateinit var bannerSource: TextView
     private lateinit var bannerTimes: TextView
+    private lateinit var bannerClock: TextView
     private lateinit var status: TextView
     private lateinit var listHeader: View
     private lateinit var numpad: View
@@ -124,6 +125,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
 
     private val handler = Handler(Looper.getMainLooper())
     private val clock = SimpleDateFormat("HH:mm", Locale("pt", "BR"))
+    private val dataDoBanner = SimpleDateFormat("dd/MM/yyyy  HH:mm", Locale("pt", "BR"))
     private var guideStarted = false
 
     private val hideBanner = Runnable {
@@ -142,6 +144,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
                 // posição que a pessoa escolheu, ele voltaria para onde o
                 // RecyclerView calhar de pousar.
                 if (listPanel.visibility == View.VISIBLE) { adapter.refresh(); focusRow(listaFoco) }
+                if (!Vr.ativo && !isModoRadio && guiaAoVivo.aberto) guiaAoVivo.atualizar()
                 if (banner.visibility == View.VISIBLE) updateBanner()
             }
             handler.postDelayed(this, TICK_MS)
@@ -237,6 +240,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         bannerProgress = findViewById(R.id.bannerProgress)
         bannerSource = findViewById(R.id.bannerSource)
         bannerTimes = findViewById(R.id.bannerTimes)
+        bannerClock = findViewById(R.id.bannerClock)
         status = findViewById(R.id.status)
         listHeader = findViewById(R.id.listHeader)
         numpad = findViewById(R.id.numpad)
@@ -301,6 +305,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
                 playWhenReady = true
                 addListener(playerListener)
                 addAnalyticsListener(analyticsListener)
+                addAnalyticsListener(repeticaoAoVivo)
                 Telemetria.observar(this)
                 Upscaling.aplicar(this)
                 AudioInteligente.aplicar(this)
@@ -437,6 +442,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
                 // posição que a pessoa escolheu, ele voltaria para onde o
                 // RecyclerView calhar de pousar.
                 if (listPanel.visibility == View.VISIBLE) { adapter.refresh(); focusRow(listaFoco) }
+                if (!Vr.ativo && !isModoRadio) guiaAoVivo.atualizar()
                 updateBanner()
             }
         }
@@ -496,13 +502,18 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
             banner.visibility = View.GONE
         }
         val chosen = channel.sources.getOrNull(sourceIndex) ?: channel.sources.first()
-        tentativaDesde = android.os.SystemClock.elapsedRealtime()
+        handler.removeCallbacks(tentarPrimeiraFonte)
+        repeticaoAoVivo.reiniciar(!isModoRadio && chosen.isHls)
+        tentativaDesde = SystemClock.elapsedRealtime()
+        imagemEstavelDesde = 0L
+        congeladoDesde = 0L
         tocouAvisado = false
         bannerResolution.text = ""
         bannerResolution.visibility = View.GONE
         if (!apósFalha || mudouDeFonte) {
             retomadas = 0
         }
+        if (!apósFalha) retries = 0
         ultimaImagem = 0L
         ultimaPosicao = -1L
         if (!apósFalha) caiuAvisado = false
@@ -603,11 +614,8 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
 
 
         override fun onPlaybackStateChanged(state: Int) {
-            if (state == Player.STATE_ENDED && tocouAvisado && !emSegundoPlano) {
-                // TV ao vivo nunca "termina". Se o player achou o fim do arquivo, a conexão caiu
-                // limpamente sem dar erro. Devemos forçar a reconexão imediatamente!
-                Log.i("SaimoTV", "fim do stream: reconectando")
-                play(current, sourceIndex, apósFalha = true)
+            if (state == Player.STATE_ENDED && !emSegundoPlano) {
+                recuperarInterrupcao("fim do stream")
                 return
             }
 
@@ -622,8 +630,6 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                             sourceIndex + 1, demorou)
                     }
                 }
-                retries = 0
-                retomadas = 0
                 ultimaImagem = android.os.SystemClock.elapsedRealtime()
                 handler.removeCallbacks(sourceTimeout)
                 status.visibility = View.GONE
@@ -647,6 +653,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             Log.w("SaimoTV", "erro no player: ${error.errorCodeName}")
 
             handler.removeCallbacks(sourceTimeout)
+            if (emSegundoPlano) return
             // Com duas telas, o decodificador que falta pode ser o que a outra
             // metade tomou: volta para uma tela só e retoma este canal.
             if (multiTela && SegundaTela.faltaDecodificador(error)) {
@@ -677,8 +684,6 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                 return
             }
 
-            // Each channel lists its sources in preference order; a dead or
-            // expired link falls through to the next before giving up.
             if (sourceIndex + 1 < channel.sources.size) {
                 play(current, sourceIndex + 1, apósFalha = true)
                 return
@@ -691,11 +696,46 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             }
             showStatus(getString(R.string.reconnecting))
             val delay = min(1.6.pow(retries.toDouble()) * 1000, 15_000.0).toLong()
-            handler.postDelayed({ play(current, 0) }, delay)
+            handler.postDelayed(tentarPrimeiraFonte, delay)
         }
     }
 
     // MARK: - Remote
+
+    private val guiaAoVivo by lazy {
+        GuiaAoVivo(findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup,
+            ::numeroDe,
+            sintonizar = { nome ->
+                val indice = ordered.indexOfFirst { it.name == nome }
+                if (indice >= 0) sintonizar(indice)
+            },
+            favoritar = { nome -> favoritarNaLista(ordered.indexOfFirst { it.name == nome }) })
+    }
+
+    private val teclasDoGuia = mutableSetOf<Int>()
+
+    private fun abrirGuiaAoVivo() {
+        if (Vr.ativo) { openList(); return }
+        handler.removeCallbacks(hideBanner)
+        banner.visibility = View.GONE
+        guiaAoVivo.abrir(ordered, ordered.getOrNull(indiceAtivo()))
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!semCanais && !isModoRadio && !Vr.ativo) {
+            val tecla = event.keyCode
+            if (event.action == KeyEvent.ACTION_UP && teclasDoGuia.remove(tecla)) return true
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                if (tecla in teclasDoGuia && (!guiaAoVivo.aberto ||
+                        tecla == KeyEvent.KEYCODE_DPAD_CENTER || tecla == KeyEvent.KEYCODE_ENTER)) return true
+                if (guiaAoVivo.tecla(tecla)) {
+                    teclasDoGuia.add(tecla)
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (numpad.visibility == View.VISIBLE) {
@@ -728,16 +768,6 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         val listOpen = listPanel.visibility == View.VISIBLE
         if (multiTela && !listOpen) teclaNaMultiTela(keyCode)?.let { return it }
         return when (keyCode) {
-            // Um toque no OK mostra o que está no ar; segurar três segundos é
-            // que abre a lista. O toque é o gesto que se dá o tempo todo, então
-            // ele fica com a ação que não tira o vídeo da frente.
-            // OK abre a lista de canais: é o que mais se faz com o controle, e
-            // o que todo app de TV faz. O cartão do canal aparece com INFO ou
-            // a cada troca; as opções (áudio, fontes, favorito) no MENU.
-            // Toque no OK: programação do canal (e, com ela na tela, as fontes).
-            // Segurar o OK: opções — é o MENU de
-            // quem não tem MENU no controle (o da Xiaomi, por exemplo). A
-            // decisão fica para quando o botão é solto (ver onKeyUp).
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 if (numpad.visibility == View.VISIBLE) {
                     padCommit()
@@ -759,7 +789,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             KeyEvent.KEYCODE_LAST_CHANNEL -> { canalAnterior(); true }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
                 when {
-                    !listOpen -> { openList(); true }
+                    !listOpen -> { abrirGuiaAoVivo(); true }
                     // Na lista, esquerda sobe para as seções: dali, esquerda e
                     // direita pulam de Esportes para Notícias sem descer 900 canais.
                     channels.hasFocus() -> { focarSecaoAtual(); true }
@@ -867,12 +897,16 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         }
     }
 
-    /**
-     * Prova de vida da fonte, do jeito que quem assiste vê.
-     *
-     * Enquanto o relógio do vídeo anda, há imagem na tela — e nenhum erro que
-     * o player cuspa no caminho justifica trocar de origem.
-     */
+    private val tentarPrimeiraFonte = Runnable {
+        if (!emSegundoPlano && ordered.isNotEmpty()) play(current, 0, apósFalha = true)
+    }
+
+    private var imagemEstavelDesde = 0L
+    private val repeticaoAoVivo = RepeticaoAoVivo {
+        if (!emSegundoPlano) recuperarInterrupcao("segmentos repetidos", repetirFonte = false)
+    }
+
+    /** Detecta quando a posição para de avançar mesmo com reprodução ativa. */
     private val vigiaDeImagem = object : Runnable {
         override fun run() {
             if (::player.isInitialized) {
@@ -884,7 +918,12 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                 if (player.isPlaying && pos > ultimaPosicao + 500) {
                     ultimaPosicao = pos
                     ultimaImagem = agora
-                    retomadas = 0
+                    if (imagemEstavelDesde == 0L) imagemEstavelDesde = agora
+                    if (agora - imagemEstavelDesde >= 120_000 &&
+                        (player.isCurrentMediaItemDynamic || player.duration == androidx.media3.common.C.TIME_UNSET)) {
+                        retomadas = 0
+                        retries = 0
+                    }
                     congeladoDesde = 0L
                 } else if (tocouAvisado && player.playWhenReady &&
                     player.playbackState != Player.STATE_IDLE) {
@@ -892,10 +931,11 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                     // em buffering eterno ou congelou sem o player dar erro
                     // nenhum. Sem este vigia só reescolher a fonte à mão
                     // desfazia — o prazo de abertura já foi desligado.
+                    imagemEstavelDesde = 0L
                     if (congeladoDesde == 0L) congeladoDesde = agora
                     if (agora - congeladoDesde >= CONGELADO_MS) {
                         congeladoDesde = agora
-                        recuperarCongelado()
+                        recuperarInterrupcao("imagem congelada")
                     }
                 } else {
                     congeladoDesde = 0L
@@ -908,27 +948,22 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     /// Desde quando o vídeo está parado sem motivo; 0 = andando normalmente.
     private var congeladoDesde = 0L
 
-    /**
-     * Canal congelado: primeiro pede o mesmo ponto de novo (volta para a
-     * borda do ao vivo), que resolve a maioria dos casos sem trocar de
-     * origem. Esgotadas as retomadas, desce para a fonte seguinte.
-     */
-    private fun recuperarCongelado() {
-        Log.w("SaimoTV", "imagem congelada: recuperando")
-        val channel = ordered.getOrNull(current) ?: return
-        val categoriaMonitor = categoriaNoMonitor(channel)
-            Telemetria.falhou(categoriaMonitor, channel.name, channel.sources.getOrNull(sourceIndex)?.url.orEmpty(),
-            sourceIndex + 1, "congelou por ${CONGELADO_MS / 1000} s")
-        if (retomadas < RETOMADAS_MAX) {
-            retomadas++
-            // Recria a conexão do zero, pois o socket pode estar preso no SO
-            play(current, sourceIndex, apósFalha = true)
-            return
-        }
-        if (sourceIndex + 1 < channel.sources.size) {
-            play(current, sourceIndex + 1, apósFalha = true)
-        } else {
-            play(current, 0, apósFalha = true)
+    private fun recuperarInterrupcao(motivo: String, repetirFonte: Boolean = true) {
+        val canal = ordered.getOrNull(current) ?: return
+        handler.removeCallbacks(sourceTimeout)
+        Log.w("SaimoTV", "$motivo: recuperando")
+        Telemetria.falhou(categoriaNoMonitor(canal), canal.name, canal.sources.getOrNull(sourceIndex)?.url.orEmpty(),
+            sourceIndex + 1, motivo)
+        when {
+            repetirFonte && retomadas < RETOMADAS_MAX -> {
+                retomadas++
+                play(current, sourceIndex, apósFalha = true)
+            }
+            sourceIndex + 1 < canal.sources.size -> play(current, sourceIndex + 1, apósFalha = true)
+            else -> {
+                avisarQueCaiu(canal)
+                canalForaDoAr(canal)
+            }
         }
     }
 
@@ -1014,19 +1049,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             if (SystemClock.elapsedRealtime() - listaAbertaEm < 400) return true
             if (okApertado) {
                 okApertado = false
-                // OK sobre o vídeo mostra a programação do canal (o rodapé); com
-                // ela já na tela, abre as fontes. A lista é na seta esquerda.
-                if (!okSegurado && listPanel.visibility != View.VISIBLE) {
-                    // Na multi tela as setas laterais trocam de metade, então
-                    // a lista (da metade ativa) passa para o OK.
-                    val faixaNaTela = banner.visibility == View.VISIBLE && banner.alpha > 0.5f
-                    // Na multi tela o primeiro OK é o mesmo de sempre (a faixa
-                    // do canal, aqui o da metade ativa); o segundo abre a lista,
-                    // que perdeu a seta esquerda para a troca de metade.
-                    if (multiTela) { if (faixaNaTela) openList() else revealBanner() }
-                    else if (faixaNaTela) escolherFonte(current)
-                    else revealBanner()
-                }
+                if (!okSegurado && listPanel.visibility != View.VISIBLE) abrirGuiaAoVivo()
                 okSegurado = false
                 return true
             }
@@ -1127,6 +1150,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         adapter.select(indiceAtivo())
         montarSecoes()
         listCount.text = ordered.size.toString()
+        if (!Vr.ativo && !isModoRadio) guiaAoVivo.atualizar(ordered)
     }
 
     /**
@@ -1297,6 +1321,11 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
      * tentar de novo, ou ir a um canal parecido que esteja funcionando.
      */
     private fun canalForaDoAr(canal: Channel) {
+        handler.removeCallbacks(sourceTimeout)
+        handler.removeCallbacks(tentarPrimeiraFonte)
+        repeticaoAoVivo.reiniciar(false)
+        player.stop()
+        if (!Vr.ativo && !isModoRadio) guiaAoVivo.fechar()
         showStatus(getString(R.string.unavailable))
         if (isFinishing || isDestroyed) return
         val secao = Categorias.de(canal)
@@ -1876,31 +1905,22 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         else { bannerLogo.dispose(); bannerLogo.setImageDrawable(null) }
 
         val now = System.currentTimeMillis()
+        bannerClock.visibility = if (multiTela) View.GONE else View.VISIBLE
+        bannerClock.text = dataDoBanner.format(Date(now))
         val pair = Epg.nowNext(channel.name, now)
         val onAir = pair?.first
-        if (onAir == null) {
-            bannerProgramme.visibility = View.GONE
-            bannerProgress.visibility = View.GONE
-            bannerTimes.visibility = View.GONE
-            return
-        }
-        bannerProgramme.visibility = View.VISIBLE
-        bannerProgress.visibility = View.VISIBLE
-        bannerTimes.visibility = View.VISIBLE
-        bannerProgramme.text = listOfNotNull(onAir.title, onAir.shortDetail).joinToString(" · ")
-        bannerProgress.progress = (onAir.progress(now) * 1000).toInt()
-        val remaining = ((onAir.stop - now) / 60_000L).coerceAtLeast(0)
-        val times = getString(
-            R.string.times, clock.format(Date(onAir.start)), clock.format(Date(onAir.stop)), remaining)
-        bannerTimes.text = pair.second?.let { "$times   ·   ${getString(R.string.up_next, it.title)}" }
-            ?: times
+        bannerProgramme.text = getString(R.string.banner_agora,
+            onAir?.title ?: getString(R.string.previa_sem_guia))
+        bannerTimes.text = pair?.second?.let { getString(R.string.up_next, it.title) }.orEmpty()
+        bannerTimes.visibility = if (pair?.second == null) View.GONE else View.VISIBLE
+        bannerProgress.progress = ((onAir?.progress(now) ?: 0f) * 1000).toInt()
     }
 
     private fun revealBanner() {
         // Na rádio, o painel dela já diz o que toca; a faixa de canal de TV
         // (com as teclas de TV) só confundiria.
         if (isModoRadio) return
-        if (listPanel.visibility == View.VISIBLE) return
+        if (listPanel.visibility == View.VISIBLE || (!Vr.ativo && guiaAoVivo.aberto)) return
         // Na multi tela a faixa vai para a metade ativa (ver posicionarBanner).
         // Com a direita ainda vazia não há canal a mostrar: fica a dica.
         if (multiTela) {
@@ -1910,6 +1930,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         }
         updateBanner()
         handler.removeCallbacks(hideBanner)
+        banner.animate().cancel()
         if (banner.visibility != View.VISIBLE) {
             banner.alpha = 0f
             banner.visibility = View.VISIBLE
@@ -1949,10 +1970,16 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     override fun onStop() {
         super.onStop()
         if (Connect.listener === this) Connect.listener = null
+        if (semCanais) return
+        if (!Vr.ativo && !isModoRadio) guiaAoVivo.fechar()
+        teclasDoGuia.clear()
         // Fora da tela, o segundo player só gastaria memória e rede. Volta com
         // o canal da metade ativa em tela cheia, como no Mac ao abrir o acervo.
         sairDaMultiTela()
         emSegundoPlano = true
+        imagemEstavelDesde = 0L
+        handler.removeCallbacks(tentarPrimeiraFonte)
+        handler.removeCallbacks(sourceTimeout)
         player.playWhenReady = false
         pararRelogios()
         handler.postDelayed(soltarPlayerParado, SOLTAR_PLAYER_MS)
@@ -1982,6 +2009,13 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             play(current, sourceIndex)
         } else if (::player.isInitialized) {
             player.playWhenReady = true
+            if (player.playbackState == Player.STATE_BUFFERING && !tocouAvisado) {
+                handler.postDelayed(sourceTimeout, SOURCE_TIMEOUT_MS)
+            } else if (player.playbackState == Player.STATE_ENDED) {
+                recuperarInterrupcao("fim do stream")
+            } else if (player.playerError != null) {
+                play(current, sourceIndex, apósFalha = true)
+            }
         }
         // Voltando das configurações com a permissão já ligada (nos aparelhos
         // em que o sistema não matou o app no caminho), retoma a atualização.
@@ -2322,6 +2356,8 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             }
             return true
         }
+        if (semCanais) return false
+        if (!isModoRadio && !Vr.ativo && guiaAoVivo.tecla(keyCode)) return true
         if (keyCode == KeyEvent.KEYCODE_DEL) {
             if (numpad.visibility == View.VISIBLE) {
                 if (typed.isNotEmpty()) typed.deleteCharAt(typed.length - 1)
@@ -2362,7 +2398,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> { zapear(-1); return true }
                 KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> { zapear(1); return true }
-                KeyEvent.KEYCODE_DPAD_LEFT -> { openList(); return true }
+                KeyEvent.KEYCODE_DPAD_LEFT -> { abrirGuiaAoVivo(); return true }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> { openGuide(); return true }
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                     if (numpad.visibility == View.VISIBLE) {
@@ -2374,14 +2410,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                         commitTyped.run()
                         return true
                     }
-                    val faixaNaTela = banner.visibility == View.VISIBLE && banner.alpha > 0.5f
-                    if (multiTela) {
-                        if (faixaNaTela) openList() else revealBanner()
-                    } else if (faixaNaTela) {
-                        escolherFonte(current)
-                    } else {
-                        revealBanner()
-                    }
+                    abrirGuiaAoVivo()
                     return true
                 }
                 KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
