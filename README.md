@@ -9,7 +9,7 @@ Em **Ajustes → Minhas listas**, adicione um link ou arquivo M3U, ou informe se
 - **OK** sobre o vídeo abre o guia. Use as setas para navegar por categorias, canais, dias e programas. O guia fecha após oito segundos sem atividade.
 - **Cima/baixo** sobre o vídeo troca de canal. A faixa inferior mostra o que está no ar e o que vem a seguir quando a grade está disponível.
 - **Segure OK** para abrir as opções do canal. A reprodução recupera falhas e testa fontes alternativas disponíveis.
-- O player é a tela de abertura. Favoritos ficam no guia. Ajustes, eventos e rádios ficam nas opções do player.
+- O player é a tela de abertura. Favoritos ficam no guia. Esportes fica na aba do guia. Ajustes fica nas opções do player.
 
 ## Desenvolvimento
 

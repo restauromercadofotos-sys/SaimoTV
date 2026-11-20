@@ -17,13 +17,12 @@ import kotlinx.coroutines.withContext
 class EscolhaActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.estado_carregando)
+        val precisaCarregar = Remote.channels.isEmpty() && Enderecos.canais != null
+        if (precisaCarregar) setContentView(R.layout.estado_carregando)
         lifecycleScope.launch(semDerrubar) {
-            withContext(Dispatchers.IO) {
-                if (Remote.channels.isEmpty() && Enderecos.canais != null) {
-                    Remote.loadCached(this@EscolhaActivity)
-                    if (MinhasListas.canaisDaTela().isEmpty()) Remote.refresh(applicationContext)
-                }
+            if (precisaCarregar) withContext(Dispatchers.IO) {
+                Remote.loadCached(this@EscolhaActivity)
+                if (MinhasListas.canaisDaTela().isEmpty()) Remote.refresh(applicationContext)
             }
             if (isFinishing) return@launch
             when (intent.action) {
@@ -35,7 +34,7 @@ class EscolhaActivity : AppCompatActivity() {
                     val termo = intent.getStringExtra(SearchManager.QUERY).orEmpty()
                     val canais = buscarCanais(termo)
                     if (canais.isNotEmpty()) {
-                        findViewById<View>(R.id.carregandoConteudo).visibility = View.GONE
+                        findViewById<View>(R.id.carregandoConteudo)?.visibility = View.GONE
                         Painel.mostrar(this@EscolhaActivity, getString(R.string.menu_buscar),
                             canais.map { canal -> Painel.Item(canal.name) { abrirCanal(canal.name) } },
                             aoFechar = { finish() })

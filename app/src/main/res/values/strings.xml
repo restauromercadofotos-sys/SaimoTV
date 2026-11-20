@@ -82,7 +82,6 @@
     <string name="menu_ajustes">Ajustes</string>
     <string name="menu_eventos">Esportes</string>
     <string name="inicio_canal_agora">agora: %1$s</string>
-    <string name="radios_recentes">Ouvidas por último</string>
     <string name="eventos_ao_vivo">Ao vivo agora</string>
     <string name="eventos_em_breve">Começa em breve</string>
     <string name="eventos_hoje">Hoje mais tarde</string>
@@ -96,22 +95,7 @@
         <item quantity="one">%1$d evento · %2$d no ar</item>
         <item quantity="other">%1$d eventos · %2$d no ar</item>
     </plurals>
-    <string name="radio_ao_vivo">AO VIVO</string>
-    <string name="radio_dica_tocando">cima e baixo trocam de estação · esquerda ou VOLTAR mostram todas as rádios</string>
-    <string name="radio_posicao">Estação %1$d de %2$d</string>
-    <string name="radios_noticias">Notícias e esporte</string>
-    <string name="radios_rock">Rock</string>
-    <string name="radios_gospel">Gospel e católicas</string>
-    <string name="radios_pop">Pop e hits</string>
-    <string name="radios_brasileiras">Sertanejo, MPB e samba</string>
-    <string name="radios_classica">Clássica e jazz</string>
-    <string name="radios_numeros">0 a 9</string>
-    <string name="radios_no_ar">Rádio ao vivo</string>
-    <string name="radios_dica">OK toca · na rádio, cima e baixo trocam de estação</string>
-    <plurals name="radios_ao_vivo">
-        <item quantity="one">%d rádio ao vivo</item>
-        <item quantity="other">%d rádios ao vivo</item>
-    </plurals>
+    <string name="esporte_ao_vivo">AO VIVO</string>
     <string name="fontes_item_amigavel">Servidor %1$d</string>
     <string name="fontes_dica">Se a imagem travar, tente outro servidor. Se ele também cair, o app troca sozinho.</string>
     <string name="opcoes_canais">Lista de canais</string>
@@ -152,7 +136,6 @@
     <string name="vr_banner_dica">Toque no vídeo para os controles</string>
     <string name="vr_painel_dica">Toque para escolher · toque fora para fechar</string>
     <string name="vr_ver_programacao">Toque de novo para assistir</string>
-    <string name="menu_radios">Rádios</string>
 
     <!-- Sintonia Connect -->
     <string name="connect_titulo">Conectar Celular</string>
@@ -189,7 +172,6 @@
 
     <!-- Estados vazios: sem endereço, ou endereço que não carregou -->
     <string name="vazio_canais">Nenhum canal ainda. Adicione uma lista M3U, uma lista com usuário e senha ou o endereço de um catálogo de canais.</string>
-    <string name="vazio_radios">Nenhuma rádio. Informe o endereço da lista de canais em Ajustes &gt; Listas.</string>
     <string name="vazio_guia">Sem guia de programação. Informe o endereço da lista de canais em Ajustes &gt; Listas.</string>
     <string name="vazio_falhou">Não consegui carregar a lista. Confira o endereço em Ajustes &gt; Listas.</string>
     <string name="vazio_botao">Adicionar lista (M3U ou usuário e senha)</string>
@@ -213,4 +195,5 @@
     <string name="carregando_dados">Carregando dados…</string>
     <string name="carregando_imagem">Sintonizando canal…</string>
     <string name="retomando_imagem">Retomando imagem…</string>
+    <string name="guia_canais">Canais</string>
 </resources>

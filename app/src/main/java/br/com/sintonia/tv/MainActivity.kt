@@ -92,8 +92,6 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
     companion object {
         /** Nome do canal a sintonizar ao abrir (link sintonia-tv://canal). */
         const val EXTRA_CANAL = "br.com.sintonia.tv.CANAL"
-        const val EXTRA_RADIO_URL = "br.com.sintonia.tv.RADIO_URL"
-        const val EXTRA_RADIO_NOME = "br.com.sintonia.tv.RADIO_NOME"
     }
 
     private lateinit var player: ExoPlayer
@@ -142,7 +140,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
                 // posição que a pessoa escolheu, ele voltaria para onde o
                 // RecyclerView calhar de pousar.
                 if (listPanel.visibility == View.VISIBLE) { adapter.refresh(); focusRow(listaFoco) }
-                if (!Vr.ativo && !isModoRadio && guiaAoVivo.aberto) guiaAoVivo.atualizar()
+                if (!Vr.ativo && guiaAoVivo.aberto) guiaAoVivo.atualizar()
                 if (banner.visibility == View.VISIBLE) updateBanner()
             }
             handler.postDelayed(this, TICK_MS)
@@ -165,11 +163,6 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
     private fun numeroDe(canal: Channel?): Int = canal?.let { numeros[it.name] } ?: 0
 
     private fun indicePorNumero(numero: Int): Int = ordered.indexOfFirst { numeros[it.name] == numero }
-    private var isModoRadio = false
-
-    private val painelRadio by lazy {
-        PainelRadio(findViewById(R.id.radioPainel)) { ::player.isInitialized && player.isPlaying }
-    }
     private var current = 0
     private var sourceIndex = 0
     private var retries = 0
@@ -189,14 +182,12 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         super.onCreate(savedInstanceState)
         // Sem canal nenhum (sem endereço, ou lista que não carregou) não há o
         // que tocar: a aba abre vazia, com o atalho para os endereços.
-        if (intent.getStringExtra(EXTRA_RADIO_URL) == null) {
-            if (Remote.channels.isEmpty() && Enderecos.canais != null) Remote.loadCached(this)
-            if (MinhasListas.canaisDaTela().isEmpty()) {
-                SemListaActivity.abrir(this)
-                semCanais = true
-                finish()
-                return
-            }
+        if (Remote.channels.isEmpty() && Enderecos.canais != null) Remote.loadCached(this)
+        if (MinhasListas.canaisDaTela().isEmpty()) {
+            SemListaActivity.abrir(this)
+            semCanais = true
+            finish()
+            return
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_main)
@@ -258,7 +249,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         channels.setItemViewCacheSize(12)
         // Sem o piscar de "mudou" a cada atualização do guia: são 300 linhas.
         (channels.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
-        if (intent.getStringExtra(EXTRA_RADIO_URL) == null) reorder()
+        reorder()
         if (isFinishing) { semCanais = true; return }
 
         // Sem estimativa, o ExoPlayer começa por uma variante baixa e o canal
@@ -306,25 +297,8 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
 
         // Abre no canal pedido por link, ou no último assistido — não no
         // primeiro da lista, que obrigava a zapear até onde se estava.
-        val rUrl = intent.getStringExtra(EXTRA_RADIO_URL)
-        val rNome = intent.getStringExtra(EXTRA_RADIO_NOME)
-        if (rUrl != null && rNome != null) {
-            isModoRadio = true
-            // A mesma lista da tela de rádios, para o zapping passar por todas.
-            val radiosList = Radios.locais(this).map { r ->
-                Channel(name = r.nome, sources = listOf(Source(url = r.url)), categoria = "Rádio", logo = r.logo)
-            }.toMutableList()
-            if (radiosList.isEmpty()) {
-                radiosList.add(Channel(name = rNome, sources = listOf(Source(url = rUrl)), categoria = "Rádio"))
-            }
-            
-            ordered = radiosList
-            numeros = ordered.mapIndexed { i, c -> c.name to i + 1 }.toMap()
-            play(ordered.indexOfFirst { it.name == rNome }.coerceAtLeast(0))
-        } else {
-            val pedido = intent.getStringExtra(EXTRA_CANAL) ?: Preferencias.ultimoCanal
-            play(ordered.indexOfFirst { it.name == pedido }.coerceAtLeast(0))
-        }
+        val pedido = intent.getStringExtra(EXTRA_CANAL) ?: Preferencias.ultimoCanal
+        play(ordered.indexOfFirst { it.name == pedido }.coerceAtLeast(0))
         handler.postDelayed(tick, TICK_MS)
         handler.postDelayed(vigiaDeImagem, VIGIA_MS)
     }
@@ -414,9 +388,9 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         status.visibility = View.GONE
         if (!abriuImagem) {
             abriuImagem = true
-            if (!isModoRadio) refreshCatalog()
+            refreshCatalog()
         }
-        if (!isModoRadio) startGuide()
+        startGuide()
     }
     private var emSegundoPlano = false
     private var bitrateDinâmicoBps = 0L
@@ -431,7 +405,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
                 // posição que a pessoa escolheu, ele voltaria para onde o
                 // RecyclerView calhar de pousar.
                 if (listPanel.visibility == View.VISIBLE) { adapter.refresh(); focusRow(listaFoco) }
-                if (!Vr.ativo && !isModoRadio) guiaAoVivo.atualizar()
+                if (!Vr.ativo) guiaAoVivo.atualizar()
                 updateBanner()
             }
         }
@@ -475,24 +449,15 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         if (ordered.isEmpty()) { mostrarSemCanais(); return }
         val mudouDeFonte = current != index.coerceIn(ordered.indices) || sourceIndex != source
         val novo = ordered.getOrNull(index.coerceIn(ordered.indices))?.name
-        // Rádio não é canal de TV: gravar a estação aqui fazia o "Ao vivo"
-        // seguinte abrir no canal 1 (o nome dela não está na lista de canais)
-        // e o "Voltar para" apontar para uma rádio.
-        if (!isModoRadio && novo != null && novo != Preferencias.ultimoCanal) {
+        if (novo != null && novo != Preferencias.ultimoCanal) {
             Preferencias.canalAnterior = Preferencias.ultimoCanal
             Preferencias.ultimoCanal = novo
         }
         current = index.coerceIn(ordered.indices)
         sourceIndex = source
         val channel = ordered[current]
-        if (isModoRadio) {
-            painelRadio.mostrar(channel, current, ordered.size)
-            // A faixa de canal de TV não aparece na rádio (ver revealBanner).
-            handler.removeCallbacks(hideBanner)
-            banner.visibility = View.GONE
-        }
         val chosen = channel.sources.getOrNull(sourceIndex) ?: channel.sources.first()
-        repeticaoAoVivo.reiniciar(!isModoRadio && chosen.isHls)
+        repeticaoAoVivo.reiniciar(chosen.isHls)
         tentativaDesde = SystemClock.elapsedRealtime()
         imagemEstavelDesde = 0L
         quadrosAnteriores = -1
@@ -512,7 +477,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         // canal está chegando. O detalhe técnico mora no painel de opções.
         bitrateDinâmicoBps = 0L
         ultimoVideoSize = null
-        if (!isModoRadio && (!abriuImagem || esperandoImagem)) aguardarImagem(R.string.carregando_imagem)
+        if (!abriuImagem || esperandoImagem) aguardarImagem(R.string.carregando_imagem)
         if (apósFalha) {
             status.visibility = View.GONE
             if (mudouDeFonte) avisarSinal(getString(R.string.sinal_trocando_fonte, sourceIndex + 1))
@@ -606,7 +571,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         override fun onPlaybackStateChanged(state: Int) {
             if (state == Player.STATE_BUFFERING) imagemEstavelDesde = 0L
             if (state == Player.STATE_ENDED && !emSegundoPlano && !isFinishing) {
-                recuperarInterrupcao("fim do stream", repetirFonte = isModoRadio)
+                recuperarInterrupcao("fim do stream", repetirFonte = false)
                 return
             }
 
@@ -617,8 +582,8 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                     Log.i("SintoniaTV", "tocou em $demorou ms (fonte ${sourceIndex + 1})")
                 }
                 val faixas = player.currentTracks
-                if (isModoRadio || (!faixas.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO) &&
-                        faixas.isTypeSelected(androidx.media3.common.C.TRACK_TYPE_AUDIO))) concluirImagem()
+                if (!faixas.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO) &&
+                        faixas.isTypeSelected(androidx.media3.common.C.TRACK_TYPE_AUDIO)) concluirImagem()
                 else if (!esperandoImagem) handler.removeCallbacks(sourceTimeout)
                 handler.postDelayed(ocultarAvisoSinal, 3_500)
                 Connect.notificarMudancaDeEstado()
@@ -703,7 +668,8 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                 val indice = ordered.indexOfFirst { it.name == nome }
                 if (indice >= 0) sintonizar(indice)
             },
-            favoritar = { nome -> favoritarNaLista(ordered.indexOfFirst { it.name == nome }) })
+            favoritar = { nome -> favoritarNaLista(ordered.indexOfFirst { it.name == nome }) },
+            abrirEsportes = { startActivity(Intent(this, EventosActivity::class.java)) })
     }
 
     private val teclasDoGuia = mutableSetOf<Int>()
@@ -716,7 +682,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (!semCanais && !isModoRadio && !Vr.ativo) {
+        if (!semCanais && !Vr.ativo) {
             val tecla = event.keyCode
             if (event.action == KeyEvent.ACTION_UP && teclasDoGuia.remove(tecla)) return true
             if (event.action == KeyEvent.ACTION_DOWN) {
@@ -758,7 +724,6 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             }
             return super.onKeyDown(keyCode, event)
         }
-        if (isModoRadio) return teclaNaRadio(keyCode, event)
         val listOpen = listPanel.visibility == View.VISIBLE
         if (multiTela && !listOpen) teclaNaMultiTela(keyCode)?.let { return it }
         return when (keyCode) {
@@ -910,7 +875,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                 val contadores = player.videoDecoderCounters
                 contadores?.ensureUpdated()
                 val quadros = contadores?.renderedOutputBufferCount ?: -1
-                val imagemAvancou = isModoRadio || player.videoFormat == null ||
+                val imagemAvancou = player.videoFormat == null ||
                     contadores == null || quadros != quadrosAnteriores
                 quadrosAnteriores = quadros
                 // Relógio para trás é linha do tempo nova — a volta para a
@@ -986,31 +951,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     private var okSegurado = false
     private var okApertado = false
 
-    /**
-     * Teclas com uma rádio tocando. Rádio não é canal de TV: não tem lista de
-     * canais, guia de programação nem fontes. Cima e baixo trocam de estação;
-     * esquerda e VOLTAR voltam para a tela de Rádios, que é a lista delas.
-     */
-    private fun teclaNaRadio(keyCode: Int, event: KeyEvent?): Boolean = when (keyCode) {
-        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
-            play((current - 1 + ordered.size) % ordered.size); true
-        }
-        KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT -> {
-            play((current + 1) % ordered.size); true
-        }
-        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> { finish(); true }
-        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-            player.playWhenReady = true; true
-        }
-        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_RIGHT,
-        KeyEvent.KEYCODE_GUIDE, KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SETTINGS,
-        KeyEvent.KEYCODE_LAST_CHANNEL, KeyEvent.KEYCODE_CAPTIONS,
-        in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> true
-        else -> super.onKeyDown(keyCode, event)
-    }
-
     override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
-        if (isModoRadio) return true
         if ((keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) &&
             listPanel.visibility != View.VISIBLE && numpad.visibility != View.VISIBLE) {
             okSegurado = true
@@ -1021,7 +962,6 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-        if (isModoRadio && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) return true
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
             // O OK que abriu a lista não pode, ao ser solto, escolher o canal em foco.
             if (SystemClock.elapsedRealtime() - listaAbertaEm < 400) return true
@@ -1111,10 +1051,8 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         val playing = ordered.getOrNull(current)?.name
         // O que o painel desligou some aqui, antes de a lista chegar à tela:
         // canal sem nenhuma fonte não abriria mesmo.
-        if (!isModoRadio) {
-            ordered = Categorias.ordenar(MinhasListas.somar(Unlock.channels(), Unlock.unlocked))
-            numeros = Categorias.ordenarFixo(ordered).mapIndexed { i, c -> c.name to i + 1 }.toMap()
-        }
+        ordered = Categorias.ordenar(MinhasListas.somar(Unlock.channels(), Unlock.unlocked))
+        numeros = Categorias.ordenarFixo(ordered).mapIndexed { i, c -> c.name to i + 1 }.toMap()
         adapter.numero = { numeroDe(it) }
         if (ordered.isEmpty()) { mostrarSemCanais(); return }
         val found = ordered.indexOfFirst { it.name == playing }
@@ -1127,7 +1065,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         adapter.select(indiceAtivo())
         montarSecoes()
         listCount.text = ordered.size.toString()
-        if (!Vr.ativo && !isModoRadio) guiaAoVivo.atualizar(ordered)
+        if (!Vr.ativo) guiaAoVivo.atualizar(ordered)
     }
 
     /**
@@ -1168,10 +1106,9 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         val itens = listOfNotNull(
             Painel.Item(getString(R.string.opcoes_canais), icone = R.drawable.ic_list) { openList() },
             Painel.Item(getString(R.string.guide), icone = R.drawable.ic_guide) { openGuide() },
-            // Rádio não chega aqui (ver teclaNaRadio). Nos óculos não há setas
-            // nem toque preciso para trocar de metade, então lá a multi tela
+            // Nos óculos não há setas nem toque preciso para trocar de metade, então lá a multi tela
             // não aparece; no celular e no tablet troca-se tocando na metade.
-            if (!isModoRadio && multiTelaPossivel()) Painel.Item(getString(R.string.multi_tela),
+            if (multiTelaPossivel()) Painel.Item(getString(R.string.multi_tela),
                 getString(R.string.multi_tela_detalhe), icone = R.drawable.ic_multi_tela) { entrarNaMultiTela() } else null,
             anterior?.let { Painel.Item(getString(R.string.opcoes_anterior, it), icone = R.drawable.ic_history) { canalAnterior() } },
             Painel.Item(getString(if (favorito) R.string.opcoes_desfavoritar else R.string.opcoes_favoritar),
@@ -1196,9 +1133,6 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                 icone = R.drawable.ic_cast) { mostrarDialogoConectar() },
             Painel.Item(getString(R.string.menu_eventos), icone = R.drawable.ic_football) {
                 startActivity(Intent(this, EventosActivity::class.java))
-            },
-            Painel.Item(getString(R.string.menu_radios), icone = R.drawable.ic_radio) {
-                startActivity(Intent(this, RadiosActivity::class.java))
             },
             Painel.Item(getString(R.string.menu_ajustes), icone = R.drawable.ic_settings) {
                 AjustesActivity.abrir(this)
@@ -1322,7 +1256,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         esperandoImagem = false
         carregandoImagem.visibility = View.GONE
         ajustarVolume(volumeDesejado)
-        if (!Vr.ativo && !isModoRadio) guiaAoVivo.fechar()
+        if (!Vr.ativo) guiaAoVivo.fechar()
         status.visibility = View.GONE
         avisarSinal(getString(R.string.unavailable))
         if (isFinishing || isDestroyed) return
@@ -1432,7 +1366,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     private fun entrarNaMultiTela() {
-        if (multiTela || isModoRadio || !multiTelaPossivel()) return
+        if (multiTela || !multiTelaPossivel()) return
         val tela2 = SegundaTela(this, findViewById(R.id.player2), findViewById(R.id.multiRotulo2),
             findViewById(R.id.multiNome2), findViewById(R.id.multiLogo2), findViewById(R.id.multiInicial2),
             findViewById(R.id.multiAviso2), { numeroDe(it) }) {
@@ -1922,9 +1856,6 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     private fun revealBanner() {
-        // Na rádio, o painel dela já diz o que toca; a faixa de canal de TV
-        // (com as teclas de TV) só confundiria.
-        if (isModoRadio) return
         if (listPanel.visibility == View.VISIBLE || (!Vr.ativo && guiaAoVivo.aberto)) return
         // Na multi tela a faixa vai para a metade ativa (ver posicionarBanner).
         // Com a direita ainda vazia não há canal a mostrar: fica a dica.
@@ -1975,7 +1906,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         if (Connect.listener === this) Connect.listener = null
         if (semCanais || !::player.isInitialized) return
         if (player.playerError != null) playerSolto = true
-        if (!Vr.ativo && !isModoRadio) guiaAoVivo.fechar()
+        if (!Vr.ativo) guiaAoVivo.fechar()
         teclasDoGuia.clear()
         // Fora da tela, o segundo player só gastaria memória e rede. Volta com
         // o canal da metade ativa em tela cheia, como no Mac ao abrir o acervo.
@@ -1985,7 +1916,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         handler.removeCallbacks(tentarReconexao)
         handler.removeCallbacks(sourceTimeout)
         player.playWhenReady = false
-        if (!isModoRadio) playerView.player = null
+        playerView.player = null
         pararRelogios()
         handler.postDelayed(soltarPlayerParado, SOLTAR_PLAYER_MS)
     }
@@ -2002,11 +1933,11 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             handler.postDelayed(tick, TICK_MS)
             handler.postDelayed(vigiaDeImagem, VIGIA_MS)
             if (guideStarted && Epg.channelsWithGuide == 0) guideStarted = false
-            if (!isModoRadio && (player.playbackState != Player.STATE_IDLE || playerSolto || player.playerError != null)) {
+            if (player.playbackState != Player.STATE_IDLE || playerSolto || player.playerError != null) {
                 aguardarImagem(R.string.retomando_imagem)
                 handler.postDelayed(sourceTimeout, SOURCE_TIMEOUT_MS)
             }
-            if (!isModoRadio) playerView.player = player
+            playerView.player = player
             if (esperandoImagem && player.playbackState == Player.STATE_READY &&
                 !player.currentTracks.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO)) concluirImagem()
         }
@@ -2019,7 +1950,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             if (player.playbackState == Player.STATE_BUFFERING && !tocouAvisado) {
                 handler.postDelayed(sourceTimeout, SOURCE_TIMEOUT_MS)
             } else if (player.playbackState == Player.STATE_ENDED) {
-                recuperarInterrupcao("fim do stream", repetirFonte = isModoRadio)
+                recuperarInterrupcao("fim do stream", repetirFonte = false)
             } else if (player.playerError != null) {
                 play(current, sourceIndex, apósFalha = true)
             }
@@ -2172,7 +2103,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     override fun obterEstado(): JSONObject {
         val root = JSONObject()
         root.put("t", "state")
-        root.put("mode", if (isModoRadio) "radio" else "live")
+        root.put("mode", "live")
         root.put("playing", ::player.isInitialized && player.isPlaying)
         root.put("multi", multiTela)
         root.put("active", telaAtiva)
@@ -2362,7 +2293,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             return true
         }
         if (semCanais) return false
-        if (!isModoRadio && !Vr.ativo && guiaAoVivo.tecla(keyCode)) return true
+        if (!Vr.ativo && guiaAoVivo.tecla(keyCode)) return true
         if (keyCode == KeyEvent.KEYCODE_DEL) {
             if (numpad.visibility == View.VISIBLE) {
                 if (typed.isNotEmpty()) typed.deleteCharAt(typed.length - 1)

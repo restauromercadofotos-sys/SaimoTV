@@ -24,17 +24,25 @@ internal class GuiaAoVivo(
     private val numero: (Channel) -> Int,
     private val sintonizar: (String) -> Unit,
     private val favoritar: (String) -> Unit,
+    private val abrirEsportes: () -> Unit,
 ) {
     private val contexto = raiz.context
     private val formatoDia = SimpleDateFormat("EEE, dd/MM", Locale.forLanguageTag("pt-BR"))
     private val hora = SimpleDateFormat("HH:mm", Locale.forLanguageTag("pt-BR"))
     private val painel = LinearLayout(contexto).apply {
-        orientation = LinearLayout.HORIZONTAL
+        orientation = LinearLayout.VERTICAL
         setPadding(dp(24), dp(20), dp(24), dp(20))
         setBackgroundColor(0xdd101716.toInt())
         isFocusableInTouchMode = true
         visibility = View.GONE
     }
+    private val corpo = LinearLayout(contexto).apply { orientation = LinearLayout.HORIZONTAL }
+    private val abas = LinearLayout(contexto).apply { orientation = LinearLayout.HORIZONTAL }
+    private val abaCanais = texto(15f)
+    private val abaEsportes = texto(15f)
+    private var focoNasAbas = false
+    private var esporteFocado = false
+
     private var categorias = listOf("Todos", Categorias.FAVORITOS)
     private var catalogo = emptyList<Channel>()
     private var canais = emptyList<Channel>()
@@ -51,6 +59,18 @@ internal class GuiaAoVivo(
     val aberto: Boolean get() = painel.visibility == View.VISIBLE
 
     init {
+        painel.addView(abas, LinearLayout.LayoutParams(-1, dp(44)).apply { bottomMargin = dp(8) })
+        painel.addView(corpo, LinearLayout.LayoutParams(-1, 0, 1f))
+        abaCanais.setText(R.string.guia_canais)
+        abaEsportes.setText(R.string.menu_eventos)
+        for (aba in listOf(abaCanais, abaEsportes)) {
+            aba.gravity = Gravity.CENTER
+            aba.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            aba.setPadding(dp(20), 0, dp(20), 0)
+            abas.addView(aba, LinearLayout.LayoutParams(-2, -1).apply { marginEnd = dp(8) })
+        }
+        abaCanais.setOnClickListener { focoNasAbas = false; atualizarFoco(); atividade() }
+        abaEsportes.setOnClickListener { fechar(); abrirEsportes() }
         raiz.addView(painel, ViewGroup.LayoutParams(-1, -1))
     }
 
@@ -58,6 +78,8 @@ internal class GuiaAoVivo(
         painel.bringToFront()
         painel.visibility = View.VISIBLE
         painel.requestFocus()
+        focoNasAbas = false
+        esporteFocado = false
         secoes.posicao = 0
         coluna = lista
         atualizar(catalogo, atual?.name)
@@ -88,9 +110,26 @@ internal class GuiaAoVivo(
 
     fun tecla(codigo: Int): Boolean {
         if (!aberto) return false
+        if (focoNasAbas) {
+            when (codigo) {
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> fechar()
+                KeyEvent.KEYCODE_DPAD_LEFT -> esporteFocado = false
+                KeyEvent.KEYCODE_DPAD_RIGHT -> esporteFocado = true
+                KeyEvent.KEYCODE_DPAD_DOWN -> focoNasAbas = false
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                    if (esporteFocado) { fechar(); abrirEsportes(); return true }
+                    focoNasAbas = false
+                }
+                KeyEvent.KEYCODE_DPAD_UP -> Unit
+                else -> return false
+            }
+            if (aberto) { atualizarFoco(); atividade() }
+            return true
+        }
         when (codigo) {
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> fechar()
             KeyEvent.KEYCODE_DPAD_LEFT -> {
+                if (coluna == secoes) entrarNasAbas()
                 coluna = when (coluna) {
                     guia -> datas
                     datas -> lista
@@ -108,8 +147,10 @@ internal class GuiaAoVivo(
                 }
                 atualizarFoco()
             }
-            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN ->
-                mover(coluna, coluna.posicao + if (codigo == KeyEvent.KEYCODE_DPAD_UP) -1 else 1)
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                if (coluna.posicao == 0) entrarNasAbas() else mover(coluna, coluna.posicao - 1)
+            }
+            KeyEvent.KEYCODE_DPAD_DOWN -> mover(coluna, coluna.posicao + 1)
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> confirmar(coluna)
             KeyEvent.KEYCODE_MENU -> canais.getOrNull(lista.posicao)?.let { favoritar(it.name) }
             else -> return false
@@ -145,7 +186,21 @@ internal class GuiaAoVivo(
         }
     }
 
+    private fun entrarNasAbas() {
+        focoNasAbas = true
+        esporteFocado = false
+        atualizarFoco()
+    }
+
     private fun atualizarFoco() {
+        for (aba in listOf(abaCanais, abaEsportes)) {
+            val ativa = focoNasAbas && (aba == abaEsportes) == esporteFocado
+            aba.setTextColor(if (ativa) 0xff10221a.toInt() else Color.WHITE)
+            aba.background = GradientDrawable().apply {
+                cornerRadius = dp(6).toFloat()
+                setColor(if (ativa) 0xff73f2be.toInt() else if (aba == abaCanais) 0xff263c34.toInt() else Color.TRANSPARENT)
+            }
+        }
         secoes.caixa.visibility = if (coluna == secoes) View.VISIBLE else View.GONE
         datas.caixa.visibility = if (coluna == secoes || dias.isEmpty()) View.GONE else View.VISIBLE
         guia.caixa.visibility = if (coluna == secoes) View.GONE else View.VISIBLE
@@ -260,7 +315,7 @@ internal class GuiaAoVivo(
                 val item = itens[position]
                 val selecionado = position == posicao
                 holder.raiz.isSelected = selecionado
-                val ativo = selecionado && coluna == this@Coluna
+                val ativo = selecionado && !focoNasAbas && coluna == this@Coluna
                 holder.raiz.background = when {
                     ativo -> holder.foco
                     selecionado -> holder.selecao
@@ -289,7 +344,7 @@ internal class GuiaAoVivo(
         }
 
         init {
-            painel.addView(caixa, LinearLayout.LayoutParams(0, -1, peso))
+            corpo.addView(caixa, LinearLayout.LayoutParams(0, -1, peso))
             caixa.addView(titulo, LinearLayout.LayoutParams(-1, dp(32)))
             caixa.addView(detalheTitulo, LinearLayout.LayoutParams(-1, -2))
             caixa.addView(detalhe, LinearLayout.LayoutParams(-1, -2))

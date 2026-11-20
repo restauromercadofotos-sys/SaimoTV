@@ -171,7 +171,6 @@ object Listas {
     suspend fun recarregar(context: android.content.Context) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         if (Enderecos.canais != null) {
             runCatching { Remote.refresh(context, forcar = true) }
-            runCatching { Radios.baixar(context) }
             runCatching { GuiaTabelas.atualizar(context) }
         }
     }

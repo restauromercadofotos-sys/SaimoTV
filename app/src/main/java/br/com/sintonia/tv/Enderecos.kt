@@ -48,9 +48,9 @@ object Enderecos {
         Connect.avisarMudancaLocal(context, 1000)
     }
 
-    /** Catálogo, restritos, rádios, guia e o que foi montado em cima deles. */
+    /** Catálogo, restritos, guia e o que foi montado em cima deles. */
     fun apagarDadosDeCanais(context: Context) {
-        for (nome in listOf("catalogo.txt", "canais.txt", "restritos.txt", "radios.txt", "guia.txt")) {
+        for (nome in listOf("catalogo.txt", "canais.txt", "restritos.txt", "guia.txt")) {
             File(context.filesDir, nome).delete()
             File(context.filesDir, "$nome.etag").delete()
         }
