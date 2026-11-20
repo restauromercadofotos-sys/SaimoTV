@@ -876,7 +876,7 @@ object Connect {
                         }
                         if (code == "HOME") {
                             val targetAct = act ?: context
-                            if (targetAct !is EscolhaActivity) {
+                            if (targetAct !is MainActivity) {
                                 val intent = Intent(targetAct, EscolhaActivity::class.java).apply {
                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                                 }

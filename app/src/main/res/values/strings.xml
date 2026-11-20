@@ -66,9 +66,6 @@
     <string name="ajustes_upscaling_hd">Nitidez HD (720p → Full HD)</string>
     <string name="ajustes_upscaling_4k">Super Resolução Ultra (Full HD → 4K)</string>
     <string name="ajustes_geral">Geral</string>
-    <string name="ajustes_abrir_em">Ao abrir o app</string>
-    <string name="ajustes_abrir_inicio">Mostrar a tela inicial</string>
-    <string name="ajustes_abrir_canal">Ir direto ao último canal</string>
     <string name="ajustes_timer">Desligar automaticamente</string>
     <string name="ajustes_timer_em">em %1$d min</string>
     <string name="ajustes_minutos">Em %1$d minutos</string>
@@ -79,7 +76,6 @@
     <string name="timer_aviso">A Sintonia TV vai fechar em 1 minuto</string>
     <string name="timer_mais_30">Continuar por mais 30 minutos</string>
     <string name="timer_cancelar">Cancelar o desligamento</string>
-    <string name="menu_inicio">Início</string>
     <string name="menu_ao_vivo">Ao vivo</string>
     <string name="busca_sem_canal">Nenhum canal encontrado para %1$s</string>
     <string name="menu_buscar">Buscar</string>
@@ -124,7 +120,6 @@
     <string name="opcoes_desfavoritar">Tirar dos favoritos</string>
     <string name="opcoes_fontes">Trocar servidor</string>
     <string name="opcoes_fontes_dica">%1$d servidores para este canal</string>
-    <string name="opcoes_inicio">Tela inicial</string>
     <!-- Multi tela: dois canais ao vivo lado a lado (MainActivity). -->
     <string name="multi_tela">Multi tela</string>
     <string name="multi_tela_detalhe">Dois canais lado a lado</string>

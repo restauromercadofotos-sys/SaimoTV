@@ -26,8 +26,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 @UnstableApi
-class EventosActivity : TelaComMenu() {
-    override val aba = Aba.EVENTOS
+class EventosActivity : TelaComEstadoVazio() {
 
     data class Jogo(
         val casa: String,
