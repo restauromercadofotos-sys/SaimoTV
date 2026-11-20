@@ -19,8 +19,7 @@ import kotlinx.coroutines.launch
  * O estilo sai do nome da rádio: a lista publicada só tem nome, endereço e logo.
  */
 @UnstableApi
-class RadiosActivity : TelaComMenu() {
-    override val aba = Aba.RADIOS
+class RadiosActivity : TelaComEstadoVazio() {
 
     private lateinit var filas: RecyclerView
     private lateinit var destaque: Destaque

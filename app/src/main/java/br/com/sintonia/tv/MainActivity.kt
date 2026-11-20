@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         if (intent.getStringExtra(EXTRA_RADIO_URL) == null) {
             if (Remote.channels.isEmpty() && Enderecos.canais != null) Remote.loadCached(this)
             if (MinhasListas.canaisDaTela().isEmpty()) {
-                SemListaActivity.abrir(this, Aba.AO_VIVO)
+                SemListaActivity.abrir(this)
                 semCanais = true
                 finish()
                 return
@@ -229,7 +229,6 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         numpadValue = findViewById(R.id.numpadValue)
 
         listHeader.setOnClickListener { openNumpad() }
-        montarMenuGlobal()
         for ((id, digit) in listOf(
             R.id.pad0 to 0, R.id.pad1 to 1, R.id.pad2 to 2, R.id.pad3 to 3, R.id.pad4 to 4,
             R.id.pad5 to 5, R.id.pad6 to 6, R.id.pad7 to 7, R.id.pad8 to 8, R.id.pad9 to 9)) {
@@ -1144,10 +1143,16 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             Painel.Item(getString(R.string.connect_titulo),
                 getString(R.string.connect_ip_pin, Connect.enderecoLocal(), Connect.pinAtual),
                 icone = R.drawable.ic_cast) { mostrarDialogoConectar() },
+            Painel.Item(getString(R.string.menu_eventos), icone = R.drawable.ic_football) {
+                startActivity(Intent(this, EventosActivity::class.java))
+            },
+            Painel.Item(getString(R.string.menu_radios), icone = R.drawable.ic_radio) {
+                startActivity(Intent(this, RadiosActivity::class.java))
+            },
             Painel.Item(getString(R.string.menu_ajustes), icone = R.drawable.ic_settings) {
                 AjustesActivity.abrir(this)
             },
-            Painel.Item(getString(R.string.opcoes_inicio), icone = R.drawable.ic_home) { finish() },
+
         )
         Painel.mostrar(this, canal.name, itens, Epg.nowNext(canal.name)?.first?.title)
     }
@@ -1313,7 +1318,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         handler.removeCallbacks(tentarPrimeiraFonte)
         handler.removeCallbacks(sourceTimeout)
         if (!isFinishing) {
-            SemListaActivity.abrir(this, Aba.AO_VIVO)
+            SemListaActivity.abrir(this)
             finish()
         }
     }
@@ -1574,7 +1579,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             Painel.Item(getString(R.string.menu_ajustes), icone = R.drawable.ic_settings) {
                 AjustesActivity.abrir(this)
             },
-            Painel.Item(getString(R.string.opcoes_inicio), icone = R.drawable.ic_home) { finish() },
+
         ), nome)
     }
 
@@ -1665,34 +1670,14 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
 
     // MARK: - Overlays
 
-    /**
-     * O mesmo menu do topo das outras telas, por cima do vídeo — aparece com a
-     * lista de canais e some com ela, para nada ficar sobre a imagem.
-     */
-    private var menuGlobal: View? = null
-
-    private fun montarMenuGlobal() {
-        val raiz = findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as? android.widget.FrameLayout ?: return
-        val barra = MenuGlobal.criar(this, Aba.AO_VIVO)
-        barra.setBackgroundResource(R.drawable.bg_top_scrim)
-        barra.visibility = View.GONE
-        raiz.addView(barra, android.widget.FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        menuGlobal = barra
-        // A lista começa abaixo do menu.
-        listPanel.setPadding(listPanel.paddingLeft, (46 * resources.displayMetrics.density).toInt(),
-            listPanel.paddingRight, listPanel.paddingBottom)
-    }
-
     private fun openList() {
         esconderBarraVr()
-        // Na multi tela, os rótulos das metades ficariam sob o menu do topo.
+        // Mantém a lista legível quando as duas telas estão abertas.
         if (multiTela) {
             esconderDica.run()
             findViewById<View>(R.id.multiRotulo1).alpha = 0f
             findViewById<View>(R.id.multiRotulo2).alpha = 0f
         }
-        menuGlobal?.visibility = View.VISIBLE
         listaAbertaEm = SystemClock.elapsedRealtime()
         handler.removeCallbacks(hideBanner)
         banner.visibility = View.GONE
@@ -1711,7 +1696,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         // foco se ele realmente escapou da lista (ficou no cabeçalho).
         listPanel.animate().translationX(0f).setDuration(180)
             .withEndAction { if (!channels.hasFocus()) focusRow(indiceAtivo()) }.start()
-        // Depois do layout: o menu do topo acabou de aparecer e ainda não tem altura.
+        // Mede o espaço disponível depois do layout.
         listPanel.post { encaixarAoLadoDaLista() }
         channels.post { focusRow(indiceAtivo()) }
     }
@@ -1797,7 +1782,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         val d = resources.displayMetrics.density
         val raiz = findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
         val margem = 16 * d
-        val topo = (menuGlobal?.takeIf { it.visibility == View.VISIBLE }?.height ?: 0) + margem / 2
+        val topo = margem / 2
         val previa = findViewById<View>(R.id.previa)
         // O cartão de prévia fica embaixo à direita; o vídeo para logo acima
         // dele — pela posição real do cartão, e não pela altura lida antes do
@@ -1834,7 +1819,6 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
 
     private fun closeList(mostrarFaixa: Boolean = true, aoFechar: (() -> Unit)? = null) {
         if (Painel.dialogVisivel() == null) palco.soltar()
-        menuGlobal?.visibility = View.GONE
         findViewById<View>(R.id.multiRotulo1).alpha = 1f
         findViewById<View>(R.id.multiRotulo2).alpha = 1f
         findViewById<View>(R.id.previa).visibility = View.GONE

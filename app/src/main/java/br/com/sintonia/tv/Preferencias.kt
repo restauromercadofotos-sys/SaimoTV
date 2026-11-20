@@ -55,11 +55,6 @@ object Preferencias {
         get() = prefs.getString("upscaling", "off") ?: "off"
         set(valor) = prefs.edit().putString("upscaling", valor).apply()
 
-    /** Onde o app abre: "inicio" ou "canal" (o último canal assistido). */
-    var abrirEm: String
-        get() = prefs.getString("abrirEm", "canal") ?: "canal"
-        set(valor) = prefs.edit().putString("abrirEm", valor).apply()
-
     /** Nome do último canal assistido, para voltar nele. */
     var ultimoCanal: String?
         get() = prefs.getString("ultimoCanal", null)

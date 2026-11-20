@@ -28,9 +28,8 @@ import kotlinx.coroutines.withContext
  * aparelho para pedir ajuda.
  */
 @UnstableApi
-class AjustesActivity : TelaComMenu() {
+class AjustesActivity : TelaComEstadoVazio() {
 
-    override val aba = Aba.AJUSTES
 
 
     companion object {
@@ -149,14 +148,6 @@ class AjustesActivity : TelaComMenu() {
         },
         Opcao(getString(R.string.ajustes_minhas_listas), { MinhasListas.resumo() }) {
             MinhasListasTela.mostrar(this, ::pedirArquivo) { redesenhar() }
-        },
-        Opcao(getString(R.string.ajustes_abrir_em), {
-            getString(if (Preferencias.abrirEm == "canal") R.string.ajustes_abrir_canal else R.string.ajustes_abrir_inicio)
-        }) {
-            escolher(getString(R.string.ajustes_abrir_em), listOf("inicio", "canal"), Preferencias.abrirEm,
-                { getString(if (it == "canal") R.string.ajustes_abrir_canal else R.string.ajustes_abrir_inicio) }) {
-                Preferencias.abrirEm = it
-            }
         },
         Opcao(getString(R.string.ajustes_timer), {
             if (TimerDeSono.ativo) getString(R.string.ajustes_timer_em, TimerDeSono.restanteMin())
