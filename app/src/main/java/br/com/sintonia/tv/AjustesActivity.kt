@@ -159,9 +159,10 @@ class AjustesActivity : TelaComEstadoVazio() {
             }
         },
 
-        Opcao(getString(R.string.ajustes_connect), { getString(R.string.ajustes_connect_n, Connect.quantosAutorizados()) }) {
+        Opcao(getString(R.string.ajustes_connect), { getString(R.string.ajustes_connect_n, Connect.quantosAutorizados(this)) }) {
+            Connect.iniciar(this)
             Painel.mostrar(this, getString(R.string.ajustes_connect), listOf(
-                Painel.Item("Endereço e PIN", "${Connect.obterIpLocal()} · PIN ${Connect.pinAtual}") {},
+                Painel.Item("Endereço e PIN", "${Connect.enderecoLocal()} · PIN ${Connect.pinAtual}") {},
                 Painel.Item("Conexão na rede local", if (Connect.ehAutoAprovarAtivo(this)) "Direta (recomendado)" else "Exigir PIN", fecha = false) {
                     Connect.definirAutoAprovar(this, !Connect.ehAutoAprovarAtivo(this))
                     redesenhar()
