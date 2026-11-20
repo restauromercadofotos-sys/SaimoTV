@@ -242,7 +242,7 @@
     <string name="timer_mais_30">Continuar por mais 30 minutos</string>
     <string name="timer_cancelar">Cancelar o desligamento</string>
     <string name="escolha_ajustes">Ajustes</string>
-    <string name="ficha_parecidos">Mais como este</string>
+    <string name="ficha_parecidos">Você também pode gostar</string>
     <string name="ficha_continuar_ep">Continuar T%1$d E%2$d</string>
     <string name="ficha_assistir_ep">Assistir T%1$d E%2$d</string>
     <string name="ficha_versao">%1$s</string>

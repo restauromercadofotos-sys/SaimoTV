@@ -405,6 +405,7 @@ object Detalhes {
                     ?.optJSONArray("results") ?: continue
                 for (i in 0 until lista.length()) {
                     val item = lista.optJSONObject(i) ?: continue
+                    if (item.optInt("id") == id) continue
                     val titulo = Generos.titulo(item.optInt("id"), serie) ?: continue
                     val achado = Vod.achar(context, titulo, serie) ?: continue
                     if (!vistos.add(achado.nomeCompleto)) continue

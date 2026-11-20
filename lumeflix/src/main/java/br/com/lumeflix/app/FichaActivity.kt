@@ -111,7 +111,7 @@ class FichaActivity : TelaComMenu() {
         // O topo ocupa a primeira tela inteira; episódios, elenco e parecidos
         // aparecem rolando para baixo com o direcional.
         findViewById<View>(R.id.fichaTopo).minimumHeight =
-            (resources.displayMetrics.density * if (BuildConfig.TV_AO_VIVO) 340 else 290).toInt()
+            (resources.displayMetrics.density * if (BuildConfig.TV_AO_VIVO) 340 else 332).toInt()
         if (!BuildConfig.TV_AO_VIVO) {
             assistir.setBackgroundResource(R.drawable.acao_lumeflix)
             assistir.setTextColor(android.graphics.Color.BLACK)
