@@ -69,13 +69,10 @@ open class PaginaActivity : TelaComMenu() {
     private lateinit var filas: RecyclerView
     private val adaptador by lazy {
         Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) },
-            aoFocar = { cartao ->
-                // Ações de catálogo/"Ver todos" não são filmes; não podem
-                // substituir o destaque por um banner gigante sem imagem.
-                if (cartao.alvo != null || cartao.fundoDe != null) destaque.mostrar(cartao)
-            }, paisagem = true)
+            paisagem = true)
     }
     private lateinit var destaque: Destaque
+    private val carrossel by lazy { CarrosselInicio(this, destaque, destaque::mostrar) }
     private var montagem: kotlinx.coroutines.Job? = null
     private var montou = false
     /** Posição de cada fileira para o seletor de gêneros saltar sem outra tela. */
@@ -133,7 +130,6 @@ open class PaginaActivity : TelaComMenu() {
     }
 
     private suspend fun montar() {
-        Generos.carregar(this)
         val lista = mutableListOf<Inicio.Fila>()
         val destaques = Destaques.filas(this)
 
@@ -166,6 +162,7 @@ open class PaginaActivity : TelaComMenu() {
             })
         }
         if (!montou && lista.isNotEmpty()) mostrar(lista)
+        Generos.carregar(this)
         if (todos) montarTodos(lista) else montarTipo(lista)
         mostrar(lista)
         if (!todos && !colecao) {
@@ -299,6 +296,7 @@ open class PaginaActivity : TelaComMenu() {
 
     private fun mostrar(lista: List<Inicio.Fila>) {
         if (isFinishing || isDestroyed) return
+        carrossel.atualizar(lista)
         adaptador.trocar(Inicio.organizarCatalogo(lista, getString(R.string.vod_continuar)).map { fila ->
             if (fila.titulo in indicePorGenero) return@map fila
             fila.copy(cartoes = fila.cartoes.distinctBy { cartao ->

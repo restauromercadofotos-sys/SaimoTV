@@ -63,7 +63,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
 
     private val adaptador by lazy {
         Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) },
-            aoFocar = { mostrarDestaque(it) }, paisagem = true)
+            paisagem = true)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -339,7 +339,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
                 Inicio.Fila(fila.titulo, fila.itens.map { cartaoDe(it) })
             }
             if (locais.isNotEmpty()) mostrarFilas(locais)
-            Generos.carregar(this)
+
         }
         val lista = mutableListOf<Inicio.Fila>()
         continuar()?.let { lista += it }
@@ -350,10 +350,23 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
             if (cartoes.isNotEmpty()) lista += Inicio.Fila(fila.titulo, cartoes)
         }
         mostrarFilas(lista)
+        Generos.carregar(this)
+        val generosLocais = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val entradas = Vod.entradas(this@EscolhaActivity)
+            listOf("Ação", "Comédia", "Drama", "Terror", "Animação", "Ficção científica").mapNotNull { genero ->
+                val titulos = entradas.asSequence().map { it.achado }.filter { Generos.tem(it.nomeCompleto, it.serie, genero) }.take(60).toList()
+                if (titulos.isEmpty()) null else Inicio.Fila(genero, titulos.map { a ->
+                    cartaoDe(Destaques.Item(a.titulo, if (a.serie) 's' else 'f', a.letra, a.ano, Generos.capa(a.nomeCompleto, a.serie).orEmpty()))
+                })
+            }
+        }
+        lista.addAll(generosLocais)
+        if (generosLocais.isNotEmpty()) mostrarFilas(lista)
         val grupos = linkedMapOf<String, MutableList<Vod.Achado>>()
         for (serie in listOf(false, true)) {
             for ((nome, titulos) in Detalhes.fileirasEditoriais(this, serie)) {
-                grupos.getOrPut(nome) { mutableListOf() }.addAll(titulos)
+                val secao = if (nome == "Em alta hoje") (if (serie) "Top 10 séries em alta hoje" else "Top 10 filmes em alta hoje") else nome
+                grupos.getOrPut(secao) { mutableListOf() }.addAll(titulos)
             }
         }
         val topo = grupos.map { (nome, titulos) ->
@@ -379,9 +392,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         // primeira capa; depois disso, fica onde a pessoa deixou.
         val devolver = primeiraVez
         adaptador.trocar(lista)
-        if (!BuildConfig.TV_AO_VIVO && cartaoDestaque == null) {
-            lista.asSequence().flatMap { it.cartoes.asSequence() }.firstOrNull { it.alvo != null }?.let { mostrarDestaque(it) }
-        }
+        carrossel.atualizar(lista)
         if (devolver) {
             primeiraVez = false
             filas.post { if (!MenuGlobal.temFoco(barraMenu)) focarPrimeiro() }
@@ -481,6 +492,8 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
     // MARK: - Destaque
 
     private val painelDestaque by lazy { Destaque(this, lifecycleScope, fundo, titulo, meta, sinopse) { it.aoEscolher() } }
+
+    private val carrossel by lazy { CarrosselInicio(this, painelDestaque, ::mostrarDestaque) }
 
     private fun mostrarDestaque(cartao: Inicio.Cartao) {
         temDestaque = true

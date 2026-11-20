@@ -81,6 +81,7 @@ object Inicio {
         /// Cartão de jogo: o selo do canto (placar ao vivo ou horário).
         val selo: String? = null,
         val seloAoVivo: Boolean = false,
+        val ranking: Int? = null,
         val aoEscolher: () -> Unit,
     )
 
@@ -125,10 +126,16 @@ object Inicio {
         val resultado = disponiveis.filter { fila ->
             val nome = Vod.normalizar(fila.titulo)
             fila.titulo != nomeContinuar &&
-                !("em alta hoje" in nomes && nome in setOf("em alta", "series em alta", "filmes em alta")) &&
+                !(( "em alta hoje" in nomes || nomes.any { it.startsWith("top 10") }) && nome in setOf("em alta", "series em alta", "filmes em alta")) &&
                 !("novas series" in nomes && seriesNovas.matches(nome)) &&
                 vistos.add(nome)
         }.toMutableList()
+        for (i in resultado.indices) {
+            val fila = resultado[i]
+            if (fila.titulo.startsWith("Top 10") || fila.titulo == "Em alta hoje") {
+                resultado[i] = fila.copy(cartoes = fila.cartoes.take(10).mapIndexed { pos, c -> c.copy(ranking = pos + 1) })
+            }
+        }
         if (continuar != null) resultado.add(minOf(1, resultado.size), continuar)
         return resultado
     }
@@ -378,6 +385,10 @@ object Inicio {
                 if (anterior !== cartao) anterior.atualizarCapaLarga = null
             }
             holder.cartao = cartao
+            holder.itemView.findViewById<TextView>(R.id.capaRanking)?.apply {
+                visibility = if (cartao.ranking != null) View.VISIBLE else View.GONE
+                text = cartao.ranking?.toString()
+            }
             holder.nome.text = cartao.titulo
             holder.sub?.text = cartao.subtitulo.orEmpty()
             holder.inicial.text = cartao.inicial

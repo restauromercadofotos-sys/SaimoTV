@@ -740,7 +740,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     private fun bufferDoFilme(): DefaultLoadControl =
         if (Aparelho.poucaMemoria) {
             DefaultLoadControl.Builder()
-                .setBufferDurationsMs(15_000, 30_000, 2_500, 5_000)
+                .setBufferDurationsMs(15_000, 30_000, 1_500, 5_000)
                 .setTargetBufferBytes(32 * 1024 * 1024)
                 .setPrioritizeTimeOverSizeThresholds(false)
                 .build()
@@ -749,7 +749,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                 // Em TV Box de 2 GB, como a Mi Box 3, 5 s para retomar fazia
                 // fontes HD entrarem no ciclo toca/carrega. Mantém uma reserva
                 // maior antes do início e principalmente após um rebuffer.
-                .setBufferDurationsMs(30_000, 60_000, 5_000, 15_000)
+                .setBufferDurationsMs(30_000, 60_000, 2_000, 15_000)
                 .setTargetBufferBytes(96 * 1024 * 1024)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
@@ -1402,16 +1402,22 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             botao(getString(R.string.player_episodios), "eps", R.drawable.ic_episodes) { painelEpisodios() }
             if (r.seguinte(atual) != null) botao(getString(R.string.player_proximo_ep), "prox", R.drawable.ic_skip_next) { irParaProximo(false) }
         }
-        val versoes = (ep?.fontes ?: r?.filme?.fontes)?.keys.orEmpty()
-        if (versoes.size > 1) {
-            botao(Titulos.rotulo(versao), "versao", R.drawable.ic_translate) { painelVersao() }
-        }
-        if (opcoes.size > 1) {
-            botao(rotuloFonte(fonte), "fonte", R.drawable.ic_swap) { painelFonte() }
-        }
         botao(getString(R.string.player_audio_legenda), "faixas", R.drawable.ic_subtitles) { painelFaixas() }
-        botao(getString(R.string.player_qualidade), "qualidade", R.drawable.ic_hd) { painelQualidade() }
-        botao(getString(R.string.player_recomecar), "inicio", R.drawable.ic_replay) { player?.seekTo(0); mostrarControles() }
+        botao("Mais opções", "mais", R.drawable.ic_more) {
+            val itens = buildList {
+                val versoes = (ep?.fontes ?: r?.filme?.fontes)?.keys.orEmpty()
+                if (versoes.size > 1) add(Painel.Item(getString(R.string.player_versao), Titulos.rotulo(versao),
+                    icone = R.drawable.ic_translate) { painelVersao() })
+                if (opcoes.size > 1) add(Painel.Item(getString(R.string.player_fontes), rotuloFonte(fonte),
+                    icone = R.drawable.ic_swap) { painelFonte() })
+                add(Painel.Item(getString(R.string.player_qualidade), icone = R.drawable.ic_hd) { painelQualidade() })
+                add(Painel.Item(getString(R.string.player_recomecar), icone = R.drawable.ic_replay) {
+                    player?.seekTo(0)
+                    mostrarControles()
+                })
+            }
+            Painel.mostrar(this, "Mais opções", itens)
+        }
     }
 
     private fun botao(texto: String, marca: String, icone: Int, acao: () -> Unit) {

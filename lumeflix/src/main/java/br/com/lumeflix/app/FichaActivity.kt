@@ -95,8 +95,6 @@ class FichaActivity : TelaComMenu() {
             abrir(this, Alvo(achado.titulo, achado.serie, achado.letra, achado.ano))
         }
     }
-    private val elenco = ElencoAdapter { pessoa -> AtorActivity.abrir(this, pessoa) }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         alvo = Alvo.de(intent) ?: run { finish(); return }
@@ -166,18 +164,6 @@ class FichaActivity : TelaComMenu() {
             }
         }
 
-        findViewById<RecyclerView>(R.id.fichaElenco).apply {
-            layoutManager = LinearLayoutManager(this@FichaActivity, RecyclerView.HORIZONTAL, false)
-            adapter = elenco
-            setHasFixedSize(true)
-            // Descer do "Assistir" cai na primeira foto, não onde a busca
-            // espacial do sistema calhar.
-            nextFocusUpId = R.id.fichaAssistir
-        }
-        assistir.nextFocusDownId = R.id.fichaElenco
-        favoritar.nextFocusDownId = R.id.fichaElenco
-        // À direita do último botão não há nada: sem isto a busca espacial
-        // descia na diagonal para o meio do elenco.
         favoritar.nextFocusRightId = R.id.fichaFavoritar
         assistir.nextFocusLeftId = R.id.fichaAssistir
         // Descer dos botões cai nos episódios, quando houver; senão no elenco.
@@ -373,7 +359,6 @@ class FichaActivity : TelaComMenu() {
                 return@launch
             }
             mostrar(ficha)
-            if (ficha.elenco.isNotEmpty()) Detalhes.aquecer(this@FichaActivity)
         }
     }
 
@@ -441,27 +426,6 @@ class FichaActivity : TelaComMenu() {
             }
         }
 
-        val creditos = listOfNotNull(
-            ficha.assinatura.takeIf { it.isNotBlank() }?.let {
-                getString(if (alvo.serie) R.string.vod_ficha_criacao else R.string.vod_ficha_direcao) +
-                    ": " + it
-            },
-            ficha.roteiro.takeIf { it.isNotBlank() }?.let {
-                getString(R.string.vod_ficha_roteiro) + ": " + it
-            },
-            ficha.produtora.takeIf { it.isNotBlank() }?.let {
-                getString(R.string.vod_ficha_producao) + ": " + it
-            },
-        )
-        findViewById<TextView>(R.id.fichaCreditos).apply {
-            text = creditos.joinToString("   ·   ")
-            visibility = if (creditos.isEmpty()) View.GONE else View.VISIBLE
-        }
-
-        if (ficha.elenco.isNotEmpty()) {
-            findViewById<View>(R.id.fichaElencoTitulo).visibility = View.VISIBLE
-            elenco.trocar(ficha.elenco)
-        }
     }
 
     private fun mostrarCapa(endereco: String) {
@@ -538,55 +502,6 @@ class FichaActivity : TelaComMenu() {
             view.animate().scaleX(escala).scaleY(escala).setDuration(120).start()
         }
     }
-}
-
-/** O elenco em fotos redondas, numa fileira que corre para o lado. */
-private class ElencoAdapter(
-    private val aoEscolher: (Detalhes.Pessoa) -> Unit,
-) : RecyclerView.Adapter<ElencoAdapter.Holder>() {
-
-    private var pessoas: List<Detalhes.Pessoa> = emptyList()
-
-    fun trocar(novas: List<Detalhes.Pessoa>) {
-        pessoas = novas
-        notifyDataSetChanged()
-    }
-
-    class Holder(view: View) : RecyclerView.ViewHolder(view) {
-        val foto: ImageView = view.findViewById(R.id.atorFoto)
-        val inicial: TextView = view.findViewById(R.id.atorInicial)
-        val nome: TextView = view.findViewById(R.id.atorNome)
-        val papel: TextView = view.findViewById(R.id.atorPapel)
-    }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
-        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_ator, parent, false)
-        view.onFocusChangeListener = FichaActivity.crescerNoFoco
-        val holder = Holder(view)
-        view.setOnKeyListener { _, codigo, evento -> Cartoes.segurarNasPontas(holder, codigo, evento) }
-        return holder
-    }
-
-    override fun onBindViewHolder(holder: Holder, position: Int) {
-        val pessoa = pessoas[position]
-        holder.nome.text = pessoa.nome
-        holder.papel.text = pessoa.papel
-        holder.inicial.text = pessoa.nome.take(1).uppercase()
-        holder.inicial.visibility = View.VISIBLE
-        if (pessoa.foto != null) {
-            holder.foto.load(pessoa.foto) {
-                transformations(CircleCropTransformation())
-                crossfade(150)
-                listener(onSuccess = { _, _ -> holder.inicial.visibility = View.GONE })
-            }
-        } else {
-            holder.foto.dispose()
-            holder.foto.setImageDrawable(null)
-        }
-        holder.itemView.setOnClickListener { aoEscolher(pessoa) }
-    }
-
-    override fun getItemCount() = pessoas.size
 }
 
 /** Episódios com miniaturas do TMDB e fallback visual para temporadas sem stills. */

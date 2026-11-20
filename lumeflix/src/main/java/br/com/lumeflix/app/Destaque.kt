@@ -93,16 +93,20 @@ class Destaque(
         trailerJob?.cancel()
         pararTrailer()
         val trailer = cartao.trailer?.takeIf { TRAILER_DIRETO.matches(it) }
-        if (trailer != null && cartao.alvo != null) {
+        if (cartao.alvo != null) {
             trailerJob = escopo.launch(semDerrubar) {
                 delay(5_000)
-                iniciarTrailer(trailer)
+                val vida = (tela as LifecycleOwner).lifecycle
+                if (!vida.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
+                val url = trailer ?: trechoDoCatalogo(cartao.alvo) ?: return@launch
+                if (vida.currentState.isAtLeast(Lifecycle.State.RESUMED)) iniciarTrailer(url)
             }
         }
         logoTitulo.dispose()
         logoTitulo.visibility = View.GONE
         val alvo = cartao.alvo
-        titulo.visibility = if (alvo == null) View.VISIBLE else View.INVISIBLE
+        titulo.visibility = View.VISIBLE
+        trocarFundo(cartao.capaLarga ?: cartao.capa.takeIf { it.isNotBlank() })
         titulo.text = if (alvo != null) Generos.semAno(alvo.titulo) else cartao.titulo
         meta.text = cartao.meta
             ?: cartao.subtitulo?.let { tela.getString(R.string.inicio_canal_agora, it) }
@@ -131,8 +135,7 @@ class Destaque(
                 titulo.visibility = View.VISIBLE
             } else {
                 logoTitulo.contentDescription = titulo.text
-                titulo.visibility = View.GONE
-                logoTitulo.visibility = View.INVISIBLE
+                logoTitulo.visibility = View.GONE
                 logoTitulo.load(urlLogo) {
                     listener(
                         onSuccess = { _, _ ->
@@ -155,7 +158,7 @@ class Destaque(
             meta.text = if (ficha.nota > 0) Icones.emLinha(tela, R.drawable.ic_star, linha,
                 meta.textSize.toInt(), meta.currentTextColor) else linha
             sinopse.text = ficha.sinopse
-            trocarFundo(ficha.fundo)
+            ficha.fundo?.let { trocarFundo(it) }
             ficha.fundo?.let { imagem ->
                 cartao.capaLarga = imagem
                 cartao.atualizarCapaLarga?.invoke(imagem)
@@ -163,9 +166,34 @@ class Destaque(
         }
     }
 
+    private suspend fun trechoDoCatalogo(alvo: Alvo): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val item = Vod.Achado(alvo.titulo, alvo.serie, alvo.letra, alvo.ano)
+        if (!alvo.serie) {
+            val filme = Vod.filmes(tela, alvo.letra).firstOrNull { it.titulo == alvo.titulo }
+            return@withContext filme?.let { Titulos.ordem(it.fontes, Preferencias.versao).firstOrNull()?.url }
+        }
+        val episodios = if (alvo.colecao.isNotEmpty()) {
+            Vod.colecao(tela, alvo.colecao).firstOrNull { it.titulo == alvo.titulo }?.episodios
+        } else {
+            Vod.series(tela, alvo.letra).firstOrNull { it.titulo == item.titulo &&
+                (item.ano.isBlank() || it.ano == item.ano) }?.let { Vod.episodios(tela, alvo.letra, it) }
+        }
+        episodios?.firstOrNull { it.temporada == 1 && it.numero == 1 }?.urls?.firstOrNull()
+    }
+
+    fun suspender() {
+        trabalho?.cancel()
+        trailerJob?.cancel()
+        pararTrailer()
+    }
+
     private fun iniciarTrailer(url: String) {
         val view = trailerView ?: return
-        val p = ExoPlayer.Builder(tela).build()
+        val carga = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+            .setBufferDurationsMs(1_000, 3_000, 600, 1_000).setTargetBufferBytes(4 * 1024 * 1024).build()
+        val p = ExoPlayer.Builder(tela).setLoadControl(carga).build()
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setMaxVideoSize(1280, 720)
+            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_AUDIO, true).build()
         trailerPlayer = p
         trailerMostrou = false
         view.alpha = 0f
@@ -180,13 +208,14 @@ class Destaque(
                     ?.animate()?.alpha(1f)?.setDuration(300)?.start()
             }
             // Endereço fora do ar ou recusado: volta a imagem, e nada abre sozinho.
-            override fun onPlayerError(error: PlaybackException) { view.post { pararTrailer() } }
+            override fun onPlayerError(error: PlaybackException) { view.post { if (trailerPlayer === p) pararTrailer() } }
         })
-        p.setMediaItem(MediaItem.fromUri(url))
+        p.setMediaSource(Playback.mediaSource(tela, Source(url)))
         p.repeatMode = ExoPlayer.REPEAT_MODE_ONE
         p.volume = 0f
         p.prepare()
         p.play()
+        trailerJob = escopo.launch { delay(11_000); if (trailerPlayer === p) pararTrailer() }
     }
     private fun pararTrailer() {
         trailerMostrou = false
