@@ -25,8 +25,7 @@ jobs:
           test -n "$CI_KEYSTORE_BASE64"
           umask 077
           printf '%s' "$CI_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sintonia-debug.jks"
-          printf 'storeFile=%s
-storeType=PKCS12\nstorePassword=android\nkeyAlias=apps\nkeyPassword=android\n' "$RUNNER_TEMP/sintonia-debug.jks" > keystore.properties
+          printf 'storeFile=%s\nstoreType=PKCS12\nstorePassword=android\nkeyAlias=apps\nkeyPassword=android\n' "$RUNNER_TEMP/sintonia-debug.jks" > keystore.properties
       - name: Compilar APK
         run: bash gradlew --no-daemon :app:assembleDebug
       - name: Conferir pacote e preparar download
