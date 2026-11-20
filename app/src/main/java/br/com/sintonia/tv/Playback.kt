@@ -206,7 +206,7 @@ object Playback {
         }
     }
 
-    fun mediaSource(context: Context, source: Source): MediaSource {
+    internal fun mediaSource(context: Context, source: Source, repeticao: RepeticaoAoVivo? = null): MediaSource {
         val cabecalhos = linkedMapOf<String, String>()
         // Todo navegador e todo player manda `Accept`; o OkHttp não manda
         // nenhum, e há servidor que trata a ausência como cliente suspeito.
@@ -253,7 +253,7 @@ object Playback {
                 .setDrmSessionManagerProvider { clearKeyManager(source) }
                 .createMediaSource(item)
             source.isHls ->
-                HlsMediaSource.Factory(http)
+                (repeticao?.let { HlsMediaSource.Factory(it.fabrica(http)) } ?: HlsMediaSource.Factory(http))
                     .setAllowChunklessPreparation(true)
                     .createMediaSource(item)
             // Fluxo MPEG-TS cru, servido direto e não por playlist. Metade das

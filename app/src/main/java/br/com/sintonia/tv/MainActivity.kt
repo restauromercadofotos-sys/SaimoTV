@@ -115,6 +115,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
     private lateinit var bannerTimes: TextView
     private lateinit var bannerClock: TextView
     private lateinit var status: TextView
+    private lateinit var avisoSinal: TextView
     private lateinit var listHeader: View
     private lateinit var numpad: View
     private lateinit var numpadValue: TextView
@@ -224,6 +225,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         bannerTimes = findViewById(R.id.bannerTimes)
         bannerClock = findViewById(R.id.bannerClock)
         status = findViewById(R.id.status)
+        avisoSinal = findViewById(R.id.avisoSinal)
         listHeader = findViewById(R.id.listHeader)
         numpad = findViewById(R.id.numpad)
         numpadValue = findViewById(R.id.numpadValue)
@@ -440,7 +442,7 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
     }
 
     private fun play(index: Int, source: Int = 0, apósFalha: Boolean = false) {
-        handler.removeCallbacks(tentarPrimeiraFonte)
+        handler.removeCallbacks(tentarReconexao)
         if (isFinishing || emSegundoPlano) return
         if (ordered.isEmpty()) { mostrarSemCanais(); return }
         val mudouDeFonte = current != index.coerceIn(ordered.indices) || sourceIndex != source
@@ -482,11 +484,17 @@ class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
         // canal está chegando. O detalhe técnico mora no painel de opções.
         bitrateDinâmicoBps = 0L
         ultimoVideoSize = null
-        showStatus(getString(if (apósFalha) R.string.loading_outra else R.string.loading))
+        if (apósFalha) {
+            status.visibility = View.GONE
+            if (mudouDeFonte) avisarSinal(getString(R.string.sinal_trocando_fonte, sourceIndex + 1))
+        } else {
+            ocultarAvisoSinal.run()
+            showStatus(getString(R.string.loading))
+        }
         handler.removeCallbacks(sourceTimeout)
         handler.postDelayed(sourceTimeout, SOURCE_TIMEOUT_MS)
         Upscaling.aplicar(player)
-        player.setMediaSource(Playback.mediaSource(this, chosen))
+        player.setMediaSource(Playback.mediaSource(this, chosen, repeticaoAoVivo))
         player.prepare()
         player.playWhenReady = true
 
@@ -580,6 +588,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                     Log.i("SintoniaTV", "tocou em $demorou ms (fonte ${sourceIndex + 1})")
                 }
                 handler.removeCallbacks(sourceTimeout)
+                handler.postDelayed(ocultarAvisoSinal, 3_500)
                 status.visibility = View.GONE
                 startGuide()
                 Connect.notificarMudancaDeEstado()
@@ -603,6 +612,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
             handler.removeCallbacks(sourceTimeout)
             if (emSegundoPlano || isFinishing || ordered.isEmpty()) return
             imagemEstavelDesde = 0L
+            avisarSinal(getString(R.string.sinal_reconectando))
             // Com duas telas, o decodificador que falta pode ser o que a outra
             // metade tomou: volta para uma tela só e retoma este canal.
             if (multiTela && SegundaTela.faltaDecodificador(error)) {
@@ -628,14 +638,15 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
 
             if ((viva || ficouParaTras) && retomadas < RETOMADAS_MAX) {
                 retomadas++
-                showStatus(getString(R.string.reconnecting))
+                avisarSinal(getString(R.string.sinal_reconectando))
                 play(current, sourceIndex, apósFalha = true)
                 // O play() já agenda o sourceTimeout.
                 return
             }
 
-            if (sourceIndex + 1 < channel.sources.size) {
-                play(current, sourceIndex + 1, apósFalha = true)
+            val proxima = proximaFonteDistinta(sourceIndex, channel.sources)
+            if (proxima >= 0) {
+                play(current, proxima, apósFalha = true)
                 return
             }
             retries++
@@ -643,9 +654,9 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
                 canalForaDoAr(channel)
                 return
             }
-            showStatus(getString(R.string.reconnecting))
+            avisarSinal(getString(R.string.sinal_reconectando))
             val delay = min(1.6.pow(retries.toDouble()) * 1000, 15_000.0).toLong()
-            handler.postDelayed(tentarPrimeiraFonte, delay)
+            handler.postDelayed(tentarReconexao, delay)
         }
     }
 
@@ -846,14 +857,14 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         }
     }
 
-    private val tentarPrimeiraFonte = Runnable {
-        if (!emSegundoPlano && ordered.isNotEmpty()) play(current, 0, apósFalha = true)
+    private val tentarReconexao = Runnable {
+        if (!emSegundoPlano && ordered.isNotEmpty()) play(current, sourceIndex, apósFalha = true)
     }
 
     private var imagemEstavelDesde = 0L
     private var quadrosAnteriores = -1
     private val repeticaoAoVivo = RepeticaoAoVivo {
-        if (!emSegundoPlano) recuperarInterrupcao("segmentos repetidos", repetirFonte = false)
+        if (!emSegundoPlano) recuperarInterrupcao("segmentos repetidos", repetirFonte = false, repeticao = true)
     }
 
     /** Confere posição e quadros renderizados: o áudio pode seguir enquanto o vídeo congela. */
@@ -904,18 +915,22 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     /// Desde quando o vídeo está parado sem motivo; 0 = andando normalmente.
     private var congeladoDesde = 0L
 
-    private fun recuperarInterrupcao(motivo: String, repetirFonte: Boolean = true) {
+    private fun recuperarInterrupcao(motivo: String, repetirFonte: Boolean = true, repeticao: Boolean = false) {
         if (emSegundoPlano || isFinishing) return
         val canal = ordered.getOrNull(current) ?: return
         handler.removeCallbacks(sourceTimeout)
         Log.w("SintoniaTV", "$motivo: recuperando")
-        val proxima = proximaFonte(sourceIndex, canal.sources.size)
+        avisarSinal(getString(if (repeticao) R.string.sinal_repetido else R.string.sinal_reconectando))
+        val proxima = proximaFonteDistinta(sourceIndex, canal.sources)
         when {
             repetirFonte && retomadas < RETOMADAS_MAX -> {
                 retomadas++
                 play(current, sourceIndex, apósFalha = true)
             }
-            proxima >= 0 -> play(current, proxima, apósFalha = true)
+            proxima >= 0 -> {
+                play(current, proxima, apósFalha = true)
+                if (repeticao) avisarSinal(getString(R.string.sinal_repetido_trocando, proxima + 1))
+            }
             else -> {
                 canalForaDoAr(canal)
             }
@@ -923,13 +938,15 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     private val sourceTimeout = Runnable {
-        if (emSegundoPlano || isFinishing) return@Runnable
-        val channel = ordered.getOrNull(current) ?: return@Runnable
-        if (sourceIndex + 1 < channel.sources.size) {
-            play(current, sourceIndex + 1, apósFalha = true)
-        } else {
-            canalForaDoAr(channel)
-        }
+        recuperarInterrupcao("prazo sem imagem", repetirFonte = false)
+    }
+
+    private val ocultarAvisoSinal = Runnable { avisoSinal.visibility = View.GONE }
+
+    private fun avisarSinal(mensagem: String) {
+        handler.removeCallbacks(ocultarAvisoSinal)
+        avisoSinal.text = mensagem
+        avisoSinal.visibility = View.VISIBLE
     }
 
     private var okSegurado = false
@@ -1264,12 +1281,13 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
      */
     private fun canalForaDoAr(canal: Channel) {
         handler.removeCallbacks(sourceTimeout)
-        handler.removeCallbacks(tentarPrimeiraFonte)
+        handler.removeCallbacks(tentarReconexao)
         repeticaoAoVivo.reiniciar(false)
         tocouAvisado = false
         player.stop()
         if (!Vr.ativo && !isModoRadio) guiaAoVivo.fechar()
-        showStatus(getString(R.string.unavailable))
+        status.visibility = View.GONE
+        avisarSinal(getString(R.string.unavailable))
         if (isFinishing || isDestroyed) return
         val secao = Categorias.de(canal)
         val parecidos = ordered.filter { it.name != canal.name && Categorias.de(it) == secao }.take(4)
@@ -1315,7 +1333,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
     }
 
     private fun mostrarSemCanais() {
-        handler.removeCallbacks(tentarPrimeiraFonte)
+        handler.removeCallbacks(tentarReconexao)
         handler.removeCallbacks(sourceTimeout)
         if (!isFinishing) {
             SemListaActivity.abrir(this)
@@ -1927,7 +1945,7 @@ override fun onVideoSizeChanged(videoSize: VideoSize) {
         sairDaMultiTela()
         emSegundoPlano = true
         imagemEstavelDesde = 0L
-        handler.removeCallbacks(tentarPrimeiraFonte)
+        handler.removeCallbacks(tentarReconexao)
         handler.removeCallbacks(sourceTimeout)
         player.playWhenReady = false
         pararRelogios()
@@ -2549,6 +2567,11 @@ private fun rotuloResolucao(largura: Int, altura: Int): String {
 
 internal fun proximaFonte(atual: Int, total: Int): Int =
     if (atual + 1 < total) atual + 1 else -1
+
+internal fun proximaFonteDistinta(atual: Int, fontes: List<Source>): Int {
+    val anteriores = fontes.take(atual + 1).mapTo(mutableSetOf()) { it.url }
+    return ((atual + 1) until fontes.size).firstOrNull { fontes[it].url !in anteriores } ?: -1
+}
 
 internal fun reproducaoEstavel(desde: Long, agora: Long): Boolean =
     desde > 0 && agora - desde >= 60_000L

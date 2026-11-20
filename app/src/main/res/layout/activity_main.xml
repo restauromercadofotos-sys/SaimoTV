@@ -380,6 +380,20 @@
         android:visibility="gone" />
 
 
+    <TextView
+        android:id="@+id/avisoSinal"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="20dp"
+        android:accessibilityLiveRegion="polite"
+        android:background="@drawable/bg_card"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="8dp"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
     <!-- Lista de canais: entra pela esquerda, navegada no D-pad. -->
     <LinearLayout
         android:id="@+id/listPanel"

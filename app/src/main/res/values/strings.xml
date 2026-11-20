@@ -206,4 +206,8 @@
     <string name="ml_adicionar">Adicionar</string>
     <string name="ml_baixando">Baixando a lista…</string>
     <string name="ml_celular_dica">Cole o link da sua lista M3U: só isso já basta. Usuário e senha são opcionais, para listas que pedem login. Dá para escrever pelo celular (Sintonia Connect).</string>
+    <string name="sinal_reconectando">Sinal instável · reconectando</string>
+    <string name="sinal_trocando_fonte">Tentando fonte %1$d</string>
+    <string name="sinal_repetido_trocando">Transmissão repetida · tentando fonte %1$d</string>
+    <string name="sinal_repetido">Transmissão repetida</string>
 </resources>
