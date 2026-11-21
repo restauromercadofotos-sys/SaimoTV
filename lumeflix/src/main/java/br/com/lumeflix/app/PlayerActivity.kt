@@ -189,13 +189,9 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     private var trechoPulado: Pulos.Trecho? = null
     private var proximoDispensado = false
     private var contagem = -1
-    private var travadas = 0
-    private var ultimaTravada = 0L
     private var ignorarBufferAte = 0L
-    private var confirmarReducao = false
     private var duracaoAnterior = 0L
     private var travouDesde = 0L
-    private var reduziu = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -503,7 +499,10 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             "BestCine" -> if (resolvido?.serie == false) 6 else 2
             else -> 0
         }
-        return aprendida + preferenciaAddon
+        val prefs = getSharedPreferences("fontes_desempenho", Context.MODE_PRIVATE)
+        val abertura = prefs.getLong("ms:" + chaveDesempenho(opcao), 0L)
+        val custo = if (abertura > 0) (abertura / 750).coerceAtMost(12).toInt() else 3
+        return aprendida + preferenciaAddon - custo
     }
 
     private fun ordenarPorDesempenho(lista: List<Titulos.Opcao>): List<Titulos.Opcao> =
@@ -723,7 +722,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             .build()
         novo.addListener(ouvinte)
         Telemetria.observar(novo)
-        if (Preferencias.economia || reduziu) limitarQualidade(novo)
+        if (Preferencias.economia) limitarQualidade(novo)
         Upscaling.aplicar(novo)
         AudioInteligente.aplicar(novo)
         aplicarLegendaPreferida(novo)
@@ -774,10 +773,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         }
         tocou = false
         retomadas = 0
-        travadas = 0
         travouDesde = 0L
-        ultimaTravada = 0L
-        confirmarReducao = false
         tentativaDesde = SystemClock.elapsedRealtime()
         ignorarFalhaAte = tentativaDesde + IGNORAR_EVENTO_ANTERIOR_MS
         mostrarCarregando(if (tentadas.isEmpty()) getString(R.string.player_abrindo)
@@ -895,10 +891,6 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
 
     private val ouvinte = object : Player.Listener {
         override fun onVideoSizeChanged(videoSize: VideoSize) {
-            if (confirmarReducao && videoSize.height in 1..720) {
-                confirmarReducao = false
-                Toast.makeText(this@PlayerActivity, R.string.player_qualidade_reduzida, Toast.LENGTH_LONG).show()
-            }
             var rotulo = rotuloResolucao(videoSize.width, videoSize.height).substringAfter(" · ")
             if (rotulo.isNotBlank()) rotulo += Upscaling.sufixoResolucao(videoSize.height)
             resolucao.text = rotulo
@@ -916,8 +908,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                     esconderCarregando()
                     val agora = SystemClock.elapsedRealtime()
                     if (travouDesde > 0 && agora - travouDesde > 5_000) {
-                        travadas = if (agora - ultimaTravada <= 120_000) travadas + 1 else 1
-                        ultimaTravada = agora
+                        ajustarDesempenho(opcoes.getOrNull(fonte), -2)
                     }
                     travouDesde = 0
                     if (duracaoAnterior > 0 && p.duration > 0) {
@@ -926,8 +917,16 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                         }
                         duracaoAnterior = 0L
                     }
-                    if (travadas >= 2 && !reduziu && !Preferencias.economia) reduzirQualidade()
                     if (!tocou) {
+                        opcoes.getOrNull(fonte)?.let { opcao ->
+                            val ms = agora - tentativaDesde
+                            if (tentativaDesde > 0 && ms in 1..120_000) {
+                                val prefs = getSharedPreferences("fontes_desempenho", Context.MODE_PRIVATE)
+                                val chave = "ms:" + chaveDesempenho(opcao)
+                                val anterior = prefs.getLong(chave, ms)
+                                prefs.edit().putLong(chave, (anterior * 2 + ms) / 3).apply()
+                            }
+                        }
                         guardarFonteQueFuncionou()
                         ajustarDesempenho(opcoes.getOrNull(fonte), 3)
                         tocou = true
@@ -1609,22 +1608,6 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
 
     private fun limitarQualidade(p: ExoPlayer) {
         p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setMaxVideoSize(1280, 720).build()
-    }
-
-    /** Duas travadas longas seguidas: a internet não dá conta, desce para HD. */
-    private fun reduzirQualidade() {
-        val p = player ?: return
-        val alturaAtual = p.videoFormat?.height ?: return
-        if (alturaAtual <= 720) return
-        val temHd = p.currentTracks.groups.any { grupo ->
-            grupo.type == C.TRACK_TYPE_VIDEO && (0 until grupo.length).any {
-                grupo.isTrackSupported(it) && grupo.getTrackFormat(it).height in 1..720
-            }
-        }
-        if (!temHd) return
-        reduziu = true
-        confirmarReducao = true
-        limitarQualidade(p)
     }
 
     private fun aplicarLegendaPreferida(p: ExoPlayer) {
