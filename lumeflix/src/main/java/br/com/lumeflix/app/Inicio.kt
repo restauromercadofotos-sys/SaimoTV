@@ -85,7 +85,7 @@ object Inicio {
         val aoEscolher: () -> Unit,
     )
 
-    enum class Tipo { CAPA, LARGO, SECAO, EVENTO, PAISAGEM }
+    enum class Tipo { CAPA, LARGO, SECAO, EVENTO, PAISAGEM, RANKING }
 
     /**
      * O gerente da lista de fileiras: não rola sozinho quando o foco muda.
@@ -133,7 +133,7 @@ object Inicio {
         for (i in resultado.indices) {
             val fila = resultado[i]
             if (fila.titulo.startsWith("Top 10") || fila.titulo == "Em alta hoje") {
-                resultado[i] = fila.copy(cartoes = fila.cartoes.take(10).mapIndexed { pos, c -> c.copy(ranking = pos + 1) })
+                resultado[i] = fila.copy(tipo = Tipo.RANKING, cartoes = fila.cartoes.take(10).mapIndexed { pos, c -> c.copy(ranking = pos + 1) })
             }
         }
         if (continuar != null) resultado.add(minOf(1, resultado.size), continuar)
@@ -152,6 +152,7 @@ object Inicio {
         private var filas: List<Fila> = emptyList()
         private val depositoCapas = RecyclerView.RecycledViewPool()
         private val depositoLargos = RecyclerView.RecycledViewPool()
+        private val depositoRanking = RecyclerView.RecycledViewPool()
         private val depositoPaisagens = RecyclerView.RecycledViewPool()
         private val depositoSecoes = RecyclerView.RecycledViewPool()
         private val depositoEventos = RecyclerView.RecycledViewPool()
@@ -206,6 +207,7 @@ object Inicio {
                 Tipo.LARGO.ordinal -> depositoLargos
                 Tipo.SECAO.ordinal -> depositoSecoes
                 Tipo.EVENTO.ordinal -> depositoEventos
+                Tipo.RANKING.ordinal -> depositoRanking
                 Tipo.PAISAGEM.ordinal -> depositoPaisagens
                 else -> depositoCapas
             })
@@ -263,12 +265,20 @@ object Inicio {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
             val layout = when (tipo) {
                 Tipo.LARGO -> R.layout.item_cartao_largo
+                Tipo.RANKING -> R.layout.item_ranking
                 Tipo.PAISAGEM -> R.layout.item_cartao_paisagem
                 Tipo.SECAO -> R.layout.item_secao
                 Tipo.EVENTO -> R.layout.item_evento_cartao
                 else -> R.layout.item_capa
             }
             val holder = Holder(LayoutInflater.from(parent.context).inflate(layout, parent, false))
+            if (tipo == Tipo.RANKING) {
+                holder.itemView.findViewById<TextView>(R.id.capaRanking).paint.apply {
+                    style = android.graphics.Paint.Style.STROKE
+                    strokeWidth = parent.resources.displayMetrics.density * 1.4f
+                    strokeJoin = android.graphics.Paint.Join.ROUND
+                }
+            }
             Cartoes.arredondar(holder.imagem.parent as View)
             // Sem crescer no foco: o contorno do row_focus já mostra onde está,
             // e a capa aumentando empurrava as vizinhas a cada passo.
@@ -390,6 +400,7 @@ object Inicio {
                 text = cartao.ranking?.toString()
             }
             holder.nome.text = cartao.titulo
+            if (tipo == Tipo.RANKING && cartao.capa.isNotBlank()) holder.nome.visibility = View.GONE
             holder.sub?.text = cartao.subtitulo.orEmpty()
             holder.inicial.text = cartao.inicial
             holder.itemView.setOnClickListener { cartao.aoEscolher() }
