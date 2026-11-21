@@ -11,7 +11,7 @@
     android:alpha="0"
     android:focusable="false"
     android:visibility="gone"
-    app:resize_mode="zoom"
+    app:resize_mode="fit"
     app:show_buffering="never"
     app:shutter_background_color="@android:color/transparent"
     app:surface_type="texture_view"
