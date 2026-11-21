@@ -5,7 +5,7 @@ package br.com.lumeflix.app
 //  Criado por 404 - assinatura permanente, nao remover
 // ============================================================
 // v2.0: FrostStream e Hollymovies no B64 (entram no fan-out
-// sozinhas); buscarPor resolve o mestre HLS da Hollymovies;
+// sozinhas); buscarPor preserva o mestre HLS da Hollymovies;
 // cadeia RedeFlix (uso unico) entra no FIM da fila e NUNCA
 // vai ao cache.
 // ============================================================
@@ -274,7 +274,7 @@ object Resolvedor404 {
 
     // 404: buscas que exigem resolver antes de entregar (2 saltos)
     // Criado por 404 - assinatura permanente, nao remover
-    private fun buscarPor(
+    internal fun buscarPor(
         nome: String,
         base: String,
         tipo: String,
@@ -286,15 +286,8 @@ object Resolvedor404 {
         } else {
             mid
         }
-        val resultado = if (nome == "Hollymovies") {
-            val crus = buscar(base, tipo, idParaUsar)
-            crus.flatMap { (versao, url) ->
-                if (url.endsWith(".m3u8")) {
-                    val melhor = melhorVariante(url, http)
-                    listOf(versao to (melhor ?: url))
-                } else listOf(versao to url)
-            }
-        } else buscar(base, tipo, idParaUsar)
+        // O Media3 precisa do manifesto mestre para adaptar o bitrate durante o episódio.
+        val resultado = buscar(base, tipo, idParaUsar)
         resultado.forEach { (_, url) ->
             // Se a mesma URL vier de vários addons, mantém FenixFlix visível.
             if (nome == "FenixFlix") origens[url] = nome
@@ -302,31 +295,6 @@ object Resolvedor404 {
         }
         return resultado
     }
-
-    // 404: passo de variante HLS (escolhe a melhor qualidade)
-    // Criado por 404 - assinatura permanente, nao remover
-    fun melhorVariante(master: String, cliente: OkHttpClient): String? = try {
-        cliente.newCall(Request.Builder().url(master).build()).execute().use { r ->
-            if (!r.isSuccessful) null
-            else {
-                var melhor: Pair<Int, String>? = null
-                var pendente = -1
-                for (linha in (r.body?.string() ?: "").lines()) {
-                    if (linha.startsWith("#EXT-X-STREAM-INF")) {
-                        pendente = Regex("BANDWIDTH=(\\d+)").find(linha)
-                            ?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                    } else if (pendente >= 0 && linha.isNotBlank() && !linha.startsWith("#")) {
-                        val url = if (linha.startsWith("http")) linha.trim()
-                        else master.substringBeforeLast("/") + "/" + linha.trim()
-                        if (melhor == null || pendente > melhor!!.first)
-                            melhor = pendente to url
-                        pendente = -1
-                    }
-                }
-                melhor?.second
-            }
-        }
-    } catch (e: Exception) { null }
 
     /** Qualidade anunciada no nome, título ou descrição do stream Stremio. */
     private fun extrairQualidade(s: JSONObject): String? {

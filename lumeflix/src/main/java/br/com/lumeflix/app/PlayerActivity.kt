@@ -460,6 +460,8 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         val url = prefs.getString("$chave:url", null)?.takeIf { it.startsWith("http") } ?: return null
         val versaoSalva = prefs.getString("$chave:versao", null).orEmpty().ifBlank { versao }
         val origem = prefs.getString("$chave:origem", null)?.takeIf { it.isNotBlank() }
+        // Versões antigas podiam guardar apenas a variante de maior bitrate desse provedor.
+        if (origem == "Hollymovies" && !prefs.getBoolean("$chave:manifestoPreservado", false)) return null
         val qualidade = prefs.getString("$chave:qualidade", null)?.takeIf { it.isNotBlank() }
         return Titulos.Opcao(versaoSalva, url, origem, qualidade)
     }
@@ -469,6 +471,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         val opcao = opcoes.getOrNull(fonte) ?: return
         val chave = chaveFonteLembrada(r)
         getSharedPreferences("fontes_vod", Context.MODE_PRIVATE).edit()
+            .putBoolean("$chave:manifestoPreservado", true)
             .putString("$chave:url", opcao.url)
             .putString("$chave:versao", opcao.versao)
             .putString("$chave:origem", opcao.origem.orEmpty())

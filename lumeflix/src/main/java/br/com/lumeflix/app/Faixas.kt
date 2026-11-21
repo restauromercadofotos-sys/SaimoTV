@@ -102,22 +102,29 @@ object Faixas {
     }
 
     fun qualidade(tela: Activity, p: ExoPlayer) {
-        val alturas = p.currentTracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
-            .flatMap { g -> (0 until g.length).map { g.getTrackFormat(it).height } }
+        val grupos = p.currentTracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+        val adaptativa = grupos.any { g -> g.isAdaptiveSupported && (0 until g.length).count { g.isTrackSupported(it) } > 1 }
+        val alturas = grupos.flatMap { g ->
+            (0 until g.length).filter { g.isTrackSupported(it) }.map { g.getTrackFormat(it).height }
+        }
             .filter { it > 0 }.distinct().sortedDescending()
         val limite = p.trackSelectionParameters.maxVideoHeight
-        val itens = mutableListOf(Painel.Item(tela.getString(R.string.player_qualidade_auto),
-            tela.getString(R.string.player_qualidade_auto_dica), marcado = limite == Int.MAX_VALUE) {
+        val itens = mutableListOf(Painel.Item(tela.getString(if (adaptativa) R.string.player_qualidade_adaptativa else R.string.player_qualidade_auto),
+            if (adaptativa) tela.getString(R.string.player_qualidade_auto_dica) else null, marcado = limite == Int.MAX_VALUE) {
             p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().clearVideoSizeConstraints().build()
         })
         for (altura in alturas) {
-            itens += Painel.Item(rotuloAltura(altura), marcado = limite == altura) {
+            itens += Painel.Item(tela.getString(R.string.player_qualidade_limite, rotuloAltura(altura)), marcado = limite == altura) {
                 p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
                     .setMaxVideoSize(Int.MAX_VALUE, altura).build()
             }
         }
-        if (alturas.size <= 1) itens += Painel.Item(tela.getString(R.string.player_qualidade_unica)) {}
-        Painel.mostrar(tela, tela.getString(R.string.player_qualidade), itens)
+        val detalhe = when {
+            grupos.isEmpty() -> null
+            !adaptativa && alturas.size == 1 -> tela.getString(R.string.player_qualidade_unica)
+            else -> p.videoFormat?.height?.takeIf { it > 0 }?.let { tela.getString(R.string.player_qualidade_atual, rotuloAltura(it)) }
+        }
+        Painel.mostrar(tela, tela.getString(R.string.player_qualidade), itens, subtitulo = detalhe)
     }
 
     fun rotuloAltura(altura: Int) = when {

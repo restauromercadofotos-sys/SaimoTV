@@ -191,7 +191,10 @@
     <string name="player_tamanho_legenda">Tamanho da legenda</string>
     <string name="player_idioma_padrao">Original</string>
     <string name="player_qualidade_auto">Automática</string>
-    <string name="player_qualidade_auto_dica">ajusta à sua internet</string>
+    <string name="player_qualidade_adaptativa">Automática (adaptativa)</string>
+    <string name="player_qualidade_auto_dica">Ajusta a imagem conforme a conexão durante a reprodução</string>
+    <string name="player_qualidade_limite">Até %1$s</string>
+    <string name="player_qualidade_atual">Em reprodução · %1$s</string>
     <string name="player_qualidade_unica">Este vídeo tem uma qualidade só</string>
     <string name="player_qualidade_reduzida">Internet lenta: qualidade reduzida para o vídeo não travar</string>
     <string-array name="tamanhos_legenda">
