@@ -17,29 +17,30 @@ val chave = Properties().apply {
 }
 
 android {
-    namespace = "br.com.saimo.tv"
+    namespace = "br.com.sintonia.tv"
     compileSdk {
         version = release(37) { minorApiLevel = 2 }
     }
 
     defaultConfig {
-        applicationId = "br.com.saimo.tv"
+        applicationId = "br.com.sintonia.tv"
         // Android 6: o mínimo do Media3 e das bibliotecas androidx atuais.
         // Até a 2.0.2 era o 5 (21); quem ainda tem Android 5 fica na 2.0.2.
         minSdk = 23
         targetSdk = 37
-        versionCode = 30001
-        versionName = "3.0.1"
+        versionCode = 8
+        versionName = "1.0.7"
     }
 
     signingConfigs {
-        create("saimo") {
+        create("sintonia") {
             val arquivo = chave.getProperty("storeFile")
             if (arquivo != null) {
                 storeFile = file(arquivo)
                 storePassword = chave.getProperty("storePassword")
                 keyAlias = chave.getProperty("keyAlias")
                 keyPassword = chave.getProperty("keyPassword")
+                chave.getProperty("storeType")?.let { storeType = it }
             }
         }
     }
@@ -53,7 +54,7 @@ android {
             // Sem o keystore.properties (outra máquina), cai na de depuração —
             // serve para compilar, mas o APK publicado tem de sair daqui.
             signingConfig = if (chave.getProperty("storeFile") != null) {
-                signingConfigs.getByName("saimo")
+                signingConfigs.getByName("sintonia")
             } else {
                 signingConfigs.getByName("debug")
             }
@@ -62,7 +63,7 @@ android {
             // Igual à publicada: instalar o teste por cima da versão de
             // verdade, e vice-versa, sem "assinaturas não conferem".
             if (chave.getProperty("storeFile") != null) {
-                signingConfig = signingConfigs.getByName("saimo")
+                signingConfig = signingConfigs.getByName("sintonia")
             }
         }
     }
@@ -100,8 +101,6 @@ dependencies {
     // Instala o perfil de compilação (src/main/baseline-prof.txt) também em
     // quem instala o APK direto, sem loja: é ele que compila o app na hora.
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
-    // "Continuar assistindo" na tela inicial do Google TV.
-    implementation("androidx.tvprovider:tvprovider:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("io.coil-kt.coil3:coil:3.6.3")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")

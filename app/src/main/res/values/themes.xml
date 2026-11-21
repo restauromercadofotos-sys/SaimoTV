@@ -1,24 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Saimo" parent="Theme.AppCompat.NoActionBar">
+    <style name="Theme.Sintonia" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">@drawable/fundo_app</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowActivityTransitions">true</item>
         <item name="android:colorAccent">@color/accent</item>
     </style>
 
-    <!-- Telas de vídeo: fundo preto liso. A imagem de fundo do app (uns 3,7 MB
-         decodificada) ficava desenhada por baixo do vídeo a cada quadro sem
-         nunca aparecer, porque a tela inteira é coberta pelo player. -->
-    <style name="Theme.Saimo.Video">
+    <style name="Theme.Sintonia.Video">
         <item name="android:windowBackground">@android:color/black</item>
     </style>
 
-    <!-- A tela inicial abre no azul da abertura: com a imagem de fundo do app
-         na janela, ela piscava antes de o vídeo entrar. -->
-    <style name="Theme.Saimo.Abertura">
-        <item name="android:windowBackground">@color/abertura_fundo</item>
-    </style>
 
     <!-- Botão do diálogo de listas e do estado vazio: o mesmo bloco claro da
          ficha quando focado. -->

@@ -1,0 +1,2568 @@
+package br.com.sintonia.tv
+
+import android.content.Intent
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.provider.Settings
+import android.util.Log
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.ProgressBar
+import android.widget.TextView
+import org.json.JSONArray
+import org.json.JSONObject
+import android.content.Context
+import android.media.AudioManager
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.isVisible
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.withStarted
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.VideoSize
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
+import androidx.media3.session.MediaSession
+import androidx.media3.ui.PlayerView
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import coil3.dispose
+import coil3.load
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.min
+import kotlin.math.pow
+
+private const val BANNER_MS = 6_000L
+private const val TICK_MS = 20_000L
+/// TV Box fica dias com o app aberto; sem isto a versão nova só aparecia
+/// para quem fechava e abria de novo.
+/// Uma fonte viva entrega imagem bem antes disto. Passou daqui sem tocar, é
+/// fonte morta que não deu erro — e sem este prazo o canal ficaria carregando
+/// para sempre em vez de descer para a próxima.
+private const val SOURCE_TIMEOUT_MS = 12_000L
+/// Quantas vezes a fonte que está no ar é retomada antes de aceitar que caiu.
+///
+/// Erro de player não é prova de queda: no TV Box o wi-fi oscila, o CDN devolve
+/// 5xx solto e a janela ao vivo escapa depois de um engasgo. Trocar de origem
+/// nesses casos é pior que o defeito — recomeça o canal noutro ponto, com outro
+/// áudio, na frente de quem está assistindo. Só depois destas retomadas sem
+/// imagem é que a fonte seguinte entra.
+private const val RETOMADAS_MAX = 3
+/// Por quanto tempo a fonte continua sendo tratada como viva depois do último
+/// quadro que ela entregou.
+private const val CREDITO_DE_IMAGEM_MS = 30_000L
+/// De quanto em quanto tempo o relógio do vídeo é conferido.
+private const val VIGIA_MS = 2_000L
+/// Quanto o player espera fora da tela antes de soltar o fluxo e o decodificador.
+private const val SOLTAR_PLAYER_MS = 45_000L
+/// Quanto tempo o relógio do vídeo pode ficar parado, com o player achando que
+/// toca ou carrega, antes de o vigia retomar a fonte sozinho. Cobre o canal que
+/// congela sem erro: engasgo de rede some em poucos segundos, isto não.
+private const val CONGELADO_MS = 12_000L
+
+/**
+ * The whole app: a channel list and a player, driven entirely by the remote.
+ *
+ * OK opens the list, OK again plays the focused channel, BACK closes it. Nothing
+ * sits permanently over the picture — every overlay shows itself on a keypress
+ * and leaves on its own.
+ */
+@UnstableApi
+class MainActivity : AppCompatActivity(), Connect.Listener, Painel.Ouvinte {
+
+    companion object {
+        /** Nome do canal a sintonizar ao abrir (link sintonia-tv://canal). */
+        const val EXTRA_CANAL = "br.com.sintonia.tv.CANAL"
+    }
+
+    private lateinit var player: ExoPlayer
+    private var mediaSession: MediaSession? = null
+    private lateinit var playerView: PlayerView
+    /// O vídeo que encolhe para o lado livre quando a lista ou um painel abre.
+    private lateinit var palco: Palco
+    private lateinit var listPanel: View
+    private lateinit var channels: RecyclerView
+    private lateinit var listCount: TextView
+    private lateinit var banner: View
+    private lateinit var bannerLogo: ImageView
+    private lateinit var bannerNumber: TextView
+    private lateinit var bannerChannel: TextView
+    private lateinit var bannerProgramme: TextView
+    private lateinit var bannerResolution: TextView
+    private lateinit var bannerProgress: ProgressBar
+    private lateinit var bannerSource: TextView
+    private lateinit var bannerTimes: TextView
+    private lateinit var bannerClock: TextView
+    private lateinit var status: TextView
+    private lateinit var carregandoImagem: View
+    private lateinit var avisoSinal: TextView
+    private lateinit var listHeader: View
+    private lateinit var numpad: View
+    private lateinit var numpadValue: TextView
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val clock = SimpleDateFormat("HH:mm", Locale("pt", "BR"))
+    private val dataDoBanner = SimpleDateFormat("dd/MM/yyyy  HH:mm", Locale("pt", "BR"))
+    private var guideStarted = false
+
+    private val hideBanner = Runnable {
+        banner.animate().alpha(0f).setDuration(220).withEndAction {
+            banner.visibility = View.GONE
+        }
+    }
+
+    /// Sem isto o programa no ar ficaria congelado depois de terminar. Só
+    /// redesenha a lista quando ela está à vista: repintar 68 linhas atrás de um
+    /// painel fechado é trabalho jogado fora num aparelho fraco.
+    private val tick = object : Runnable {
+        override fun run() {
+            if (Epg.tick()) {
+                // O refresh reconstrói as linhas visíveis; sem repor o foco na
+                // posição que a pessoa escolheu, ele voltaria para onde o
+                // RecyclerView calhar de pousar.
+                if (listPanel.visibility == View.VISIBLE) { adapter.refresh(); focusRow(listaFoco) }
+                if (!Vr.ativo && guiaAoVivo.aberto) guiaAoVivo.atualizar()
+                if (banner.visibility == View.VISIBLE) updateBanner()
+            }
+            handler.postDelayed(this, TICK_MS)
+        }
+    }
+
+    private val adapter = ChannelAdapter(
+        // Na multi tela a lista cobre a metade esquerda: escolhido o canal,
+        // ela sai para as duas imagens ficarem à vista.
+        onPick = { sintonizar(it); if (multiTela) closeList() },
+        onFavorite = { index -> favoritarNaLista(index) })
+
+    /// Favoritos primeiro, depois a ordem do catálogo.
+    private var ordered: List<Channel> = emptyList()
+    /// Número de cada canal, fixo: sai da ordem por seção, sem contar os
+    /// favoritos. Favoritar um canal não renumera os outros — "canal 5" é o
+    /// mesmo hoje e amanhã, no controle e na voz.
+    private var numeros: Map<String, Int> = emptyMap()
+
+    private fun numeroDe(canal: Channel?): Int = canal?.let { numeros[it.name] } ?: 0
+
+    private fun indicePorNumero(numero: Int): Int = ordered.indexOfFirst { numeros[it.name] == numero }
+    private var current = 0
+    private var sourceIndex = 0
+    private var retries = 0
+
+    /// Posição focada dentro da lista aberta — não confundir com `current`, que
+    /// é o canal no ar. Movida só por nós (ver `moverFoco`), nunca pela busca
+    /// de foco do sistema.
+    private var listaFoco = 0
+    /// Sobe a cada `focusRow` novo, para uma chamada atrasada (o post de
+    /// dentro dela) desistir se a pessoa já pediu outra posição enquanto isso.
+    private var focoGeracao = 0
+
+    /// A abertura foi desviada para a tela vazia: nada do player foi criado.
+    private var semCanais = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.estado_carregando)
+        lifecycleScope.launch(semDerrubar) {
+            val temCanais = withContext(Dispatchers.IO) {
+                if (Remote.channels.isEmpty() && Enderecos.canais != null) Remote.loadCached(applicationContext)
+                MinhasListas.canaisDaTela().isNotEmpty()
+            }
+            lifecycle.withStarted {
+                if (isFinishing) return@withStarted
+                if (temCanais) montarPlayer()
+                else {
+                    SemListaActivity.abrir(this@MainActivity)
+                    semCanais = true
+                    finish()
+                }
+            }
+        }
+    }
+
+    private fun montarPlayer() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        setContentView(R.layout.activity_main)
+        if (Vr.ativo) Vr.videoEmTextura(this, R.id.player)
+
+        playerView = findViewById(R.id.player)
+        val raizDoVideo = findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
+        // Logo acima das camadas de vídeo (player, segundo player, multi tela),
+        // abaixo de tudo o mais.
+        val cantos = Cantos(this, androidx.core.content.ContextCompat.getColor(this, R.color.surface))
+        raizDoVideo.addView(cantos, raizDoVideo.indexOfChild(findViewById(R.id.multiTela)) + 1,
+            android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        palco = Palco(raizDoVideo, cantos) {
+            listOf<View>(playerView, findViewById(R.id.player2), findViewById(R.id.multiTela))
+        }
+        listPanel = findViewById(R.id.listPanel)
+        channels = findViewById(R.id.channels)
+        listCount = findViewById(R.id.listCount)
+        banner = findViewById(R.id.banner)
+        bannerLogo = findViewById(R.id.bannerLogo)
+        bannerNumber = findViewById(R.id.bannerNumber)
+        bannerChannel = findViewById(R.id.bannerChannel)
+        bannerProgramme = findViewById(R.id.bannerProgramme)
+        bannerResolution = findViewById(R.id.bannerResolution)
+        bannerProgress = findViewById(R.id.bannerProgress)
+        bannerSource = findViewById(R.id.bannerSource)
+        bannerTimes = findViewById(R.id.bannerTimes)
+        bannerClock = findViewById(R.id.bannerClock)
+        status = findViewById(R.id.status)
+        carregandoImagem = findViewById(R.id.carregandoImagem)
+        avisoSinal = findViewById(R.id.avisoSinal)
+        listHeader = findViewById(R.id.listHeader)
+        numpad = findViewById(R.id.numpad)
+        numpadValue = findViewById(R.id.numpadValue)
+
+        listHeader.setOnClickListener { openNumpad() }
+        for ((id, digit) in listOf(
+            R.id.pad0 to 0, R.id.pad1 to 1, R.id.pad2 to 2, R.id.pad3 to 3, R.id.pad4 to 4,
+            R.id.pad5 to 5, R.id.pad6 to 6, R.id.pad7 to 7, R.id.pad8 to 8, R.id.pad9 to 9)) {
+            findViewById<View>(id).setOnClickListener { padDigit(digit) }
+        }
+        findViewById<View>(R.id.padDel).setOnClickListener {
+            if (typed.isNotEmpty()) typed.deleteCharAt(typed.length - 1)
+            numpadValue.text = typed
+        }
+        findViewById<View>(R.id.padOk).setOnClickListener { padCommit() }
+        if (Vr.ativo) montarVr()
+
+        Favorites.load(this)
+        // A lista publicada de ontem já está em disco: abre com ela e troca
+        // quando a de hoje chegar, para o app nunca abrir sem canais.
+        // Já lida pela tela inicial na maioria das vezes: não relê o disco.
+        if (Remote.channels.isEmpty()) Remote.loadCached(this)
+        channels.layoutManager = LinearLayoutManager(this)
+        channels.adapter = adapter
+        // As linhas têm todas a mesma altura, então o RecyclerView pode pular a
+        // remedição a cada mudança — é o que tira o engasgo ao rolar a lista.
+        channels.setHasFixedSize(true)
+        channels.setItemViewCacheSize(12)
+        // Sem o piscar de "mudou" a cada atualização do guia: são 300 linhas.
+        (channels.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
+        reorder()
+        if (isFinishing) { semCanais = true; return }
+
+        // Sem estimativa, o ExoPlayer começa por uma variante baixa e o canal
+        // abre borrado até a adaptação subir. Partindo de uma estimativa alta
+        // ele escolhe a melhor de cara e desce se a rede pedir — mesma intenção
+        // da reordenação do master no macOS.
+        val bandwidth = DefaultBandwidthMeter.Builder(this)
+            .setInitialBitrateEstimate(8_000_000L)
+            .build()
+        val liveSpeedControl = androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl.Builder()
+            .setFallbackMaxPlaybackSpeed(if (Preferencias.zeroDelay == "agressivo") 1.08f else 1.04f)
+            .setFallbackMinPlaybackSpeed(1.0f)
+            .build()
+        player = ExoPlayer.Builder(this)
+            // Decodificador que falha ao abrir dá lugar ao próximo do aparelho,
+            // em vez de o canal parecer fora do ar.
+            .setRenderersFactory(SintoniaRenderersFactory(this))
+            .setBandwidthMeter(bandwidth)
+            .setLivePlaybackSpeedControl(liveSpeedControl)
+            .setLoadControl(
+                controleDeBuffer())
+            .build().apply {
+                playWhenReady = true
+                addListener(playerListener)
+                addAnalyticsListener(analyticsListener)
+                addAnalyticsListener(repeticaoAoVivo)
+                Upscaling.aplicar(this)
+                AudioInteligente.aplicar(this)
+            }
+        playerView.player = player
+        playerView.useController = false
+
+        // A sessão é o que expõe o app pro Assistant (Mi Box) e pra Alexa
+        // (Fire TV): "próximo/canal anterior" e "abrir <canal>" chegam por ela
+        // enquanto o Sintonia TV está na tela, sem precisar de servidor nem de
+        // skill cadastrada. O player de fachada existe porque o de verdade
+        // troca de fonte trocando o MediaSource inteiro — nunca tem um
+        // "próximo item" de playlist para a sessão pedir sozinha.
+        // Voz é enfeite: um aparelho que recuse a sessão continua passando canal.
+        mediaSession = runCatching {
+            MediaSession.Builder(this, ChannelPlayer(player))
+                .setCallback(sessionCallback)
+                .build()
+        }.onFailure { Log.w("SintoniaTV", "sessão de mídia indisponível", it) }.getOrNull()
+
+        // Abre no canal pedido por link, ou no último assistido — não no
+        // primeiro da lista, que obrigava a zapear até onde se estava.
+        val pedido = intent.getStringExtra(EXTRA_CANAL) ?: Preferencias.ultimoCanal
+        play(ordered.indexOfFirst { it.name == pedido }.coerceAtLeast(0))
+        handler.postDelayed(tick, TICK_MS)
+        handler.postDelayed(vigiaDeImagem, VIGIA_MS)
+        Connect.listener = this
+        jaIniciou = true
+    }
+
+    /**
+     * Quanto do canal guardar adiantado.
+     *
+     * Meio segundo de buffer basta para começar a mostrar; o resto enche
+     * depois. Esperar dois segundos antes do primeiro quadro é o que fazia a
+     * troca de canal parecer lenta.
+     *
+     * O teto é que muda com o aparelho. Quarenta segundos priorizando tempo
+     * sobre tamanho não têm limite em bytes: num canal Full HD a 8–15 Mbps são
+     * 40 a 75 MB, que num Fire TV Stick de 1 GB se somam ao resto do sistema
+     * até ele matar o app — com a lista aberta, depois de alguns minutos, que
+     * é o tempo de o buffer encher. Lá o teto é 30 segundos e 32 MB, o que
+     * ainda cobre qualquer engasgo de rede comum. Nos outros, até 120 s, mas
+     * com teto de 96 MB: sem ele, um canal 4K enchia centenas de MB.
+     */
+    private fun controleDeBuffer(): DefaultLoadControl {
+        val zeroModo = Preferencias.zeroDelay
+        if (zeroModo == "agressivo") {
+            return DefaultLoadControl.Builder()
+                .setBufferDurationsMs(4_000, 15_000, 800, 1_500)
+                .setTargetBufferBytes(24 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholds(false)
+                .build()
+        }
+        if (zeroModo == "equilibrado") {
+            return DefaultLoadControl.Builder()
+                .setBufferDurationsMs(8_000, 25_000, 1_200, 2_500)
+                .setTargetBufferBytes(32 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholds(false)
+                .build()
+        }
+        return if (Aparelho.poucaMemoria) {
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(15_000, 30_000, 1_500, 3_000)
+                .setTargetBufferBytes(32 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholds(false)
+                .build()
+        } else {
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(32_000, 120_000, 1_500, 5_000)
+                .setTargetBufferBytes(96 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholds(false)
+                .build()
+        }
+    }
+
+    /** Pega a lista publicada sem tirar do ar o canal que está tocando. */
+    private fun refreshCatalog() {
+        lifecycleScope.launch(semDerrubar) {
+            if (!Remote.refresh(this@MainActivity)) return@launch
+            reorder()
+            updateBanner()
+        }
+    }
+
+    /// Distingue a primeira abertura da volta de outra tela.
+    private var jaIniciou = false
+    private var abriuImagem = false
+    private var esperandoImagem = false
+    private var volumeDesejado = 1f
+
+    private fun ajustarVolume(volume: Float) {
+        volumeDesejado = volume
+        player.volume = if (esperandoImagem) 0f else volume
+    }
+
+    private fun aguardarImagem(mensagem: Int) {
+        esperandoImagem = true
+        carregandoImagem.findViewById<TextView>(R.id.carregandoMensagem).setText(mensagem)
+        carregandoImagem.visibility = View.VISIBLE
+        status.visibility = View.GONE
+        ajustarVolume(volumeDesejado)
+    }
+
+    private fun concluirImagem() {
+        if (emSegundoPlano) return
+        if (esperandoImagem) {
+            esperandoImagem = false
+            carregandoImagem.visibility = View.GONE
+            ajustarVolume(volumeDesejado)
+        }
+        handler.removeCallbacks(sourceTimeout)
+        status.visibility = View.GONE
+        if (!abriuImagem) {
+            abriuImagem = true
+            if (Connect.quantosAutorizados(this) > 0) Connect.iniciar(this)
+            refreshCatalog()
+        }
+        startGuide()
+    }
+    private var emSegundoPlano = false
+    private var bitrateDinâmicoBps = 0L
+    private var ultimoVideoSize: androidx.media3.common.VideoSize? = null
+
+    private fun startGuide() {
+        if (guideStarted) return
+        guideStarted = true
+        lifecycleScope.launch(semDerrubar) {
+            Epg.load(this@MainActivity) {
+                // O refresh reconstrói as linhas visíveis; sem repor o foco na
+                // posição que a pessoa escolheu, ele voltaria para onde o
+                // RecyclerView calhar de pousar.
+                if (listPanel.visibility == View.VISIBLE) { adapter.refresh(); focusRow(listaFoco) }
+                if (!Vr.ativo) guiaAoVivo.atualizar()
+                updateBanner()
+            }
+        }
+    }
+
+    // MARK: - Playback
+
+    /// Para o monitor: quando a tentativa começou, se já avisou que tocou e se
+    /// já avisou que o canal caiu — um aviso por tentativa, não um por segundo.
+    private var tentativaDesde = 0L
+    private var tocouAvisado = false
+    /// Retomadas gastas na fonte que está no ar. Zera a cada quadro novo.
+    private var retomadas = 0
+    /// Quando a fonte no ar entregou imagem pela última vez, e em que ponto.
+    private var ultimaImagem = 0L
+    private var ultimaPosicao = -1L
+
+    private fun encontrarIndiceCanal(nome: String): Int {
+        var idx = ordered.indexOfFirst { it.name.equals(nome, ignoreCase = true) }
+        if (idx >= 0) return idx
+        val limpo = nome.lowercase().replace(" ", "").replace("-", "").replace("hd", "")
+        if (limpo.isNotBlank()) {
+            idx = ordered.indexOfFirst {
+                val itLimpo = it.name.lowercase().replace(" ", "").replace("-", "").replace("hd", "")
+                itLimpo == limpo || itLimpo.contains(limpo) || limpo.contains(itLimpo)
+            }
+        }
+        return idx
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (!::player.isInitialized) return
+        val nome = intent.getStringExtra(EXTRA_CANAL) ?: return
+        val indice = encontrarIndiceCanal(nome)
+        if (indice >= 0) play(indice)
+    }
+
+    private fun play(index: Int, source: Int = 0, apósFalha: Boolean = false) {
+        handler.removeCallbacks(tentarReconexao)
+        if (isFinishing || emSegundoPlano) return
+        if (ordered.isEmpty()) { mostrarSemCanais(); return }
+        val mudouDeFonte = current != index.coerceIn(ordered.indices) || sourceIndex != source
+        val novo = ordered.getOrNull(index.coerceIn(ordered.indices))?.name
+        if (novo != null && novo != Preferencias.ultimoCanal) {
+            Preferencias.canalAnterior = Preferencias.ultimoCanal
+            Preferencias.ultimoCanal = novo
+        }
+        current = index.coerceIn(ordered.indices)
+        sourceIndex = source
+        val channel = ordered[current]
+        val chosen = channel.sources.getOrNull(sourceIndex) ?: channel.sources.first()
+        repeticaoAoVivo.reiniciar(chosen.isHls)
+        tentativaDesde = SystemClock.elapsedRealtime()
+        imagemEstavelDesde = 0L
+        quadrosAnteriores = -1
+        congeladoDesde = 0L
+        tocouAvisado = false
+        bannerResolution.text = ""
+        bannerResolution.visibility = View.GONE
+        if (!apósFalha || mudouDeFonte) {
+            retomadas = 0
+        }
+        if (!apósFalha) retries = 0
+        ultimaImagem = 0L
+        ultimaPosicao = -1L
+        // O aviso conta a tentativa inteira, não só o instante da troca: dizer
+        // "fonte 1 falhou" por meio segundo e sumir não informa ninguém.
+        // Quem assiste não precisa saber de fonte nem de servidor: só que o
+        // canal está chegando. O detalhe técnico mora no painel de opções.
+        bitrateDinâmicoBps = 0L
+        ultimoVideoSize = null
+        if (!abriuImagem || esperandoImagem) aguardarImagem(R.string.carregando_imagem)
+        if (apósFalha) {
+            status.visibility = View.GONE
+            if (mudouDeFonte) avisarSinal(getString(R.string.sinal_trocando_fonte, sourceIndex + 1))
+        } else {
+            ocultarAvisoSinal.run()
+            if (!esperandoImagem) showStatus(getString(R.string.loading))
+        }
+        handler.removeCallbacks(sourceTimeout)
+        handler.postDelayed(sourceTimeout, SOURCE_TIMEOUT_MS)
+        Upscaling.aplicar(player)
+        player.setMediaSource(Playback.mediaSource(this, chosen, repeticaoAoVivo))
+        player.prepare()
+        player.playWhenReady = true
+
+        adapter.select(indiceAtivo())
+        if (multiTela) atualizarRotulo()
+        updateBanner()
+        revealBanner()
+        Connect.notificarMudancaDeEstado()
+    }
+
+    
+    private val analyticsListener = object : androidx.media3.exoplayer.analytics.AnalyticsListener {
+        override fun onLoadCompleted(
+            eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+            loadEventInfo: androidx.media3.exoplayer.source.LoadEventInfo,
+            mediaLoadData: androidx.media3.exoplayer.source.MediaLoadData
+        ) {
+            if (mediaLoadData.dataType == androidx.media3.common.C.DATA_TYPE_MEDIA) {
+                val bytes = loadEventInfo.bytesLoaded
+                val durationMs = mediaLoadData.mediaEndTimeMs - mediaLoadData.mediaStartTimeMs
+                if (durationMs > 0 && bytes > 0) {
+                    val bps = (bytes * 8000L) / durationMs
+                    val anterior = (bitrateDinâmicoBps + 50_000) / 100_000
+                    // Média móvel suave para não piscar muito (70% antigo, 30% novo)
+                    if (bitrateDinâmicoBps == 0L) bitrateDinâmicoBps = bps
+                    else bitrateDinâmicoBps = (bitrateDinâmicoBps * 7 + bps * 3) / 10
+                    
+                    if (banner.visibility == View.VISIBLE && !faixaDaSegunda() &&
+                        anterior != (bitrateDinâmicoBps + 50_000) / 100_000) atualizarResolucao()
+                }
+            }
+        }
+    }
+
+
+    private val playerListener = object : Player.Listener {
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+            ultimoVideoSize = videoSize
+            if (banner.visibility == View.VISIBLE && !faixaDaSegunda()) atualizarResolucao()
+        }
+
+        override fun onPlaybackStateChanged(state: Int) {
+            if (state == Player.STATE_BUFFERING) imagemEstavelDesde = 0L
+            if (state == Player.STATE_ENDED && !emSegundoPlano && !isFinishing) {
+                recuperarInterrupcao("fim do stream", repetirFonte = false)
+                return
+            }
+
+            if (state == Player.STATE_READY) {
+                if (!tocouAvisado) {
+                    tocouAvisado = true
+                    val demorou = android.os.SystemClock.elapsedRealtime() - tentativaDesde
+                    Log.i("SintoniaTV", "tocou em $demorou ms (fonte ${sourceIndex + 1})")
+                }
+                val faixas = player.currentTracks
+                if (!faixas.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO) &&
+                        faixas.isTypeSelected(androidx.media3.common.C.TRACK_TYPE_AUDIO)) concluirImagem()
+                else if (!esperandoImagem) handler.removeCallbacks(sourceTimeout)
+                handler.postDelayed(ocultarAvisoSinal, 3_500)
+                Connect.notificarMudancaDeEstado()
+            }
+        }
+        
+        override fun onRenderedFirstFrame() {
+            concluirImagem()
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // Se tentar pausar enquanto o app está aberto, força a tocar de novo.
+            // TV ao vivo não tem pausa. (O sistema pausa sozinho se perder foco de áudio, por ex).
+            if (!playWhenReady && !emSegundoPlano) {
+                player.playWhenReady = true
+            }
+        }
+
+
+        override fun onPlayerError(error: PlaybackException) {
+            // Uma linha por erro, sem a pilha inteira: troca de fonte é rotina
+            // e a pilha do ExoPlayer não diz nada que o código do erro não diga.
+            Log.w("SintoniaTV", "erro no player: ${error.errorCodeName}")
+
+            handler.removeCallbacks(sourceTimeout)
+            if (emSegundoPlano || isFinishing || ordered.isEmpty()) return
+            imagemEstavelDesde = 0L
+            avisarSinal(getString(R.string.sinal_reconectando))
+            // Com duas telas, o decodificador que falta pode ser o que a outra
+            // metade tomou: volta para uma tela só e retoma este canal.
+            if (multiTela && SegundaTela.faltaDecodificador(error)) {
+                sairDaMultiTela(manterAtiva = false, semSuporte = true)
+                play(current, sourceIndex, apósFalha = true)
+                return
+            }
+            val channel = ordered[current]
+            if (SegundaTela.faltaDecodificador(error)) {
+                recuperarInterrupcao(error.errorCodeName, repetirFonte = false)
+                return
+            }
+
+            val agora = android.os.SystemClock.elapsedRealtime()
+            // A fonte estava entregando imagem até agora há pouco: o erro foi
+            // tropeço de rede, não a origem morrendo.
+            val viva = ultimaImagem > 0L && agora - ultimaImagem < CREDITO_DE_IMAGEM_MS
+            // Ficar para trás da janela ao vivo é o player que perdeu o passo
+            // depois de um engasgo, não a fonte acabando. O certo é voltar para
+            // a borda do ao vivo — trocar de origem aqui tira quem está
+            // assistindo do lugar sem motivo nenhum.
+            val ficouParaTras = error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
+
+            if ((viva || ficouParaTras) && retomadas < RETOMADAS_MAX) {
+                retomadas++
+                avisarSinal(getString(R.string.sinal_reconectando))
+                play(current, sourceIndex, apósFalha = true)
+                // O play() já agenda o sourceTimeout.
+                return
+            }
+
+            val proxima = proximaFonteDistinta(sourceIndex, channel.sources)
+            if (proxima >= 0) {
+                play(current, proxima, apósFalha = true)
+                return
+            }
+            retries++
+            if (retries > 6) {
+                canalForaDoAr(channel)
+                return
+            }
+            avisarSinal(getString(R.string.sinal_reconectando))
+            val delay = min(1.6.pow(retries.toDouble()) * 1000, 15_000.0).toLong()
+            handler.postDelayed(tentarReconexao, delay)
+        }
+    }
+
+    // MARK: - Remote
+
+    private val guiaAoVivo by lazy {
+        GuiaAoVivo(findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup,
+            ::numeroDe,
+            sintonizar = { nome ->
+                val indice = ordered.indexOfFirst { it.name == nome }
+                if (indice >= 0) sintonizar(indice)
+            },
+            favoritar = { nome -> favoritarNaLista(ordered.indexOfFirst { it.name == nome }) },
+            abrirEsportes = { startActivity(Intent(this, EventosActivity::class.java)) })
+    }
+
+    private val teclasDoGuia = mutableSetOf<Int>()
+
+    private fun abrirGuiaAoVivo() {
+        if (Vr.ativo) { openList(); return }
+        handler.removeCallbacks(hideBanner)
+        banner.visibility = View.GONE
+        guiaAoVivo.abrir(ordered, ordered.getOrNull(indiceAtivo()))
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!::player.isInitialized) return super.dispatchKeyEvent(event)
+        if (!semCanais && !Vr.ativo) {
+            val tecla = event.keyCode
+            if (event.action == KeyEvent.ACTION_UP && teclasDoGuia.remove(tecla)) return true
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                if (tecla in teclasDoGuia && (!guiaAoVivo.aberto ||
+                        tecla == KeyEvent.KEYCODE_DPAD_CENTER || tecla == KeyEvent.KEYCODE_ENTER)) return true
+                if (guiaAoVivo.tecla(tecla)) {
+                    teclasDoGuia.add(tecla)
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (!::player.isInitialized) return super.onKeyDown(keyCode, event)
+        if (numpad.visibility == View.VISIBLE) {
+            if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                closeNumpad()
+                return true
+            }
+            if (keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
+                padDigit(keyCode - KeyEvent.KEYCODE_0)
+                return true
+            }
+            if (keyCode == KeyEvent.KEYCODE_DEL) {
+                if (typed.isNotEmpty()) typed.deleteCharAt(typed.length - 1)
+                numpadValue.text = typed
+                return true
+            }
+            val padIds = setOf(
+                R.id.pad0, R.id.pad1, R.id.pad2, R.id.pad3, R.id.pad4,
+                R.id.pad5, R.id.pad6, R.id.pad7, R.id.pad8, R.id.pad9,
+                R.id.padDel, R.id.padOk
+            )
+            val cur = currentFocus
+            if (cur == null || cur.id !in padIds) {
+                findViewById<View>(R.id.pad1)?.requestFocus()
+                return true
+            }
+            return super.onKeyDown(keyCode, event)
+        }
+        val listOpen = listPanel.visibility == View.VISIBLE
+        if (multiTela && !listOpen) teclaNaMultiTela(keyCode)?.let { return it }
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                if (numpad.visibility == View.VISIBLE) {
+                    padCommit()
+                    return true
+                }
+                if (typed.isNotEmpty()) {
+                    handler.removeCallbacks(commitTyped)
+                    commitTyped.run()
+                    return true
+                }
+                if (listOpen) return super.onKeyDown(keyCode, event)
+                if (event != null && event.repeatCount == 0) {
+                    event.startTracking()
+                    okSegurado = false
+                    okApertado = true
+                }
+                true
+            }
+            KeyEvent.KEYCODE_LAST_CHANNEL -> { canalAnterior(); true }
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                when {
+                    !listOpen -> { abrirGuiaAoVivo(); true }
+                    // Na lista, esquerda sobe para as seções: dali, esquerda e
+                    // direita pulam de Esportes para Notícias sem descer 900 canais.
+                    channels.hasFocus() -> { focarSecaoAtual(); true }
+                    else -> super.onKeyDown(keyCode, event)
+                }
+            }
+            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
+                when {
+                    listOpen -> { closeList(); true }
+                    // VOLTAR na multi tela fecha a segunda; o canal da metade
+                    // ativa fica em tela cheia.
+                    multiTela -> { sairDaMultiTela(); true }
+                    else -> super.onKeyDown(keyCode, event)
+                }
+            }
+            // Sobre a imagem o direcional troca de canal, como numa TV: cima e
+            // baixo andam na lista, direita abre a programação.
+            //
+            // Dentro da lista, cima/baixo NÃO passam para o RecyclerView achar
+            // o próximo foco sozinho — segurando a tecla, o TV Box antigo não
+            // dá conta de gerar as linhas na velocidade dos eventos, a busca de
+            // foco falha e ele "desiste" voltando pro topo, num loop. Em vez
+            // disso o índice é nosso: cada tecla anda um item e manda rolar
+            // para ele, sem depender da busca espacial do sistema.
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                when {
+                    !listOpen -> { zapear(-1); true }
+                    // Canal+ / Canal− na lista pulam de seção em seção.
+                    channels.hasFocus() && keyCode == KeyEvent.KEYCODE_CHANNEL_UP -> { pularSecao(-1); true }
+                    channels.hasFocus() -> { moverFoco(-passo(event)); true }
+                    else -> super.onKeyDown(keyCode, event)
+                }
+            }
+            KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                when {
+                    !listOpen -> { zapear(1); true }
+                    channels.hasFocus() && keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN -> { pularSecao(1); true }
+                    channels.hasFocus() -> { moverFoco(passo(event)); true }
+                    else -> super.onKeyDown(keyCode, event)
+                }
+            }
+            // Ao vivo não pausa: a tecla só garante que está tocando.
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                player.playWhenReady = true; true
+            }
+            KeyEvent.KEYCODE_INFO -> { if (!listOpen) revealBanner(); true }
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_GUIDE -> {
+                when {
+                    !listOpen -> { openGuide(); true }
+                    // Na lista, a direita abre as fontes do canal em foco.
+                    keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && channels.hasFocus() -> {
+                        escolherFonte(listaFoco); true
+                    }
+                    else -> super.onKeyDown(keyCode, event)
+                }
+            }
+            in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> {
+                // Digitar o número é a busca que existe num controle remoto:
+                // teclado virtual para texto livre seria pior de usar.
+                typeDigit(keyCode - KeyEvent.KEYCODE_0); true
+            }
+            KeyEvent.KEYCODE_DEL -> {
+                if (numpad.visibility == View.VISIBLE) {
+                    if (typed.isNotEmpty()) typed.deleteCharAt(typed.length - 1)
+                    numpadValue.text = typed
+                    true
+                } else if (typed.isNotEmpty()) {
+                    typed.deleteCharAt(typed.length - 1)
+                    if (typed.isNotEmpty()) {
+                        showStatus(getString(R.string.channel_number, typed.toString()))
+                        handler.removeCallbacks(commitTyped)
+                        handler.postDelayed(commitTyped, 1_200)
+                    } else {
+                        status.visibility = View.GONE
+                        handler.removeCallbacks(commitTyped)
+                    }
+                    true
+                } else {
+                    super.onKeyDown(keyCode, event)
+                }
+            }
+            KeyEvent.KEYCODE_CLEAR -> {
+                typed = StringBuilder()
+                status.visibility = View.GONE
+                handler.removeCallbacks(commitTyped)
+                if (numpad.visibility == View.VISIBLE) {
+                    numpadValue.text = ""
+                }
+                true
+            }
+            KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SETTINGS -> {
+                if (listOpen && keyCode == KeyEvent.KEYCODE_MENU) {
+                    favoritarNaLista(if (ordered.getOrNull(listaFoco) != null) listaFoco else current)
+                } else {
+                    opcoes()
+                }
+                true
+            }
+            KeyEvent.KEYCODE_CAPTIONS -> { Faixas.audioELegenda(this, player); true }
+            else -> {
+                if (!listOpen) revealBanner()
+                super.onKeyDown(keyCode, event)
+            }
+        }
+    }
+
+    private val tentarReconexao = Runnable {
+        if (!emSegundoPlano && ordered.isNotEmpty()) play(current, sourceIndex, apósFalha = true)
+    }
+
+    private var imagemEstavelDesde = 0L
+    private var quadrosAnteriores = -1
+    private val repeticaoAoVivo = RepeticaoAoVivo {
+        if (!emSegundoPlano) recuperarInterrupcao("segmentos repetidos", repetirFonte = false, repeticao = true)
+    }
+
+    /** Confere posição e quadros renderizados: o áudio pode seguir enquanto o vídeo congela. */
+    private val vigiaDeImagem = object : Runnable {
+        override fun run() {
+            if (::player.isInitialized) {
+                val pos = player.currentPosition
+                val agora = android.os.SystemClock.elapsedRealtime()
+                val contadores = player.videoDecoderCounters
+                contadores?.ensureUpdated()
+                val quadros = contadores?.renderedOutputBufferCount ?: -1
+                val imagemAvancou = player.videoFormat == null ||
+                    contadores == null || quadros != quadrosAnteriores
+                quadrosAnteriores = quadros
+                // Relógio para trás é linha do tempo nova — a volta para a
+                // borda do ao vivo faz isso. Recomeça a contagem dali.
+                if (pos < ultimaPosicao - 1_000) ultimaPosicao = pos
+                if (player.isPlaying && pos > ultimaPosicao + 500 && imagemAvancou) {
+                    ultimaPosicao = pos
+                    ultimaImagem = agora
+                    if (imagemEstavelDesde == 0L) imagemEstavelDesde = agora
+                    if (reproducaoEstavel(imagemEstavelDesde, agora) &&
+                        (player.isCurrentMediaItemDynamic || player.duration == androidx.media3.common.C.TIME_UNSET)) {
+                        retomadas = 0
+                        retries = 0
+                    }
+                    congeladoDesde = 0L
+                } else if (tocouAvisado && player.playWhenReady &&
+                    player.playbackState != Player.STATE_IDLE) {
+                    // Devia estar tocando e o relógio do vídeo não anda: ficou
+                    // em buffering eterno ou congelou sem o player dar erro
+                    // nenhum. Sem este vigia só reescolher a fonte à mão
+                    // desfazia — o prazo de abertura já foi desligado.
+                    imagemEstavelDesde = 0L
+                    if (congeladoDesde == 0L) congeladoDesde = agora
+                    if (agora - congeladoDesde >= CONGELADO_MS) {
+                        congeladoDesde = agora
+                        recuperarInterrupcao("imagem congelada")
+                    }
+                } else {
+                    congeladoDesde = 0L
+                }
+            }
+            handler.postDelayed(this, VIGIA_MS)
+        }
+    }
+
+    /// Desde quando o vídeo está parado sem motivo; 0 = andando normalmente.
+    private var congeladoDesde = 0L
+
+    private fun recuperarInterrupcao(motivo: String, repetirFonte: Boolean = true, repeticao: Boolean = false) {
+        if (emSegundoPlano || isFinishing) return
+        val canal = ordered.getOrNull(current) ?: return
+        handler.removeCallbacks(sourceTimeout)
+        Log.w("SintoniaTV", "$motivo: recuperando")
+        avisarSinal(getString(if (repeticao) R.string.sinal_repetido else R.string.sinal_reconectando))
+        val proxima = proximaFonteDistinta(sourceIndex, canal.sources)
+        when {
+            repetirFonte && retomadas < RETOMADAS_MAX -> {
+                retomadas++
+                play(current, sourceIndex, apósFalha = true)
+            }
+            proxima >= 0 -> {
+                play(current, proxima, apósFalha = true)
+                if (repeticao) avisarSinal(getString(R.string.sinal_repetido_trocando, proxima + 1))
+            }
+            else -> {
+                canalForaDoAr(canal)
+            }
+        }
+    }
+
+    private val sourceTimeout = Runnable {
+        recuperarInterrupcao("prazo sem imagem", repetirFonte = false)
+    }
+
+    private val ocultarAvisoSinal = Runnable { avisoSinal.visibility = View.GONE }
+
+    private fun avisarSinal(mensagem: String) {
+        handler.removeCallbacks(ocultarAvisoSinal)
+        avisoSinal.text = mensagem
+        avisoSinal.visibility = View.VISIBLE
+    }
+
+    private var okSegurado = false
+    private var okApertado = false
+
+    override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
+        if (!::player.isInitialized) return super.onKeyLongPress(keyCode, event)
+        if ((keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) &&
+            listPanel.visibility != View.VISIBLE && numpad.visibility != View.VISIBLE) {
+            okSegurado = true
+            opcoes()
+            return true
+        }
+        return super.onKeyLongPress(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (!::player.isInitialized) return super.onKeyUp(keyCode, event)
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            // O OK que abriu a lista não pode, ao ser solto, escolher o canal em foco.
+            if (SystemClock.elapsedRealtime() - listaAbertaEm < 400) return true
+            if (okApertado) {
+                okApertado = false
+                if (!okSegurado && listPanel.visibility != View.VISIBLE) abrirGuiaAoVivo()
+                okSegurado = false
+                return true
+            }
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
+    private var listaAbertaEm = 0L
+
+    private var typed = StringBuilder()
+    private val commitTyped = Runnable {
+        val entered = typed.toString()
+        typed = StringBuilder()
+        status.visibility = View.GONE
+        if (Unlock.consume(entered)) {
+            reorder()
+            return@Runnable
+        }
+        val number = entered.toIntOrNull()
+        val indice = number?.let { indicePorNumero(it) } ?: -1
+        if (indice >= 0) sintonizar(indice)
+    }
+
+    // MARK: - Teclado na tela
+
+    /**
+     * Not every remote has number keys — the Xiaomi one does not — and the code
+     * that reveals the extra list is typed, so there has to be a way in with
+     * nothing but the D-pad and OK. The keypad opens from the list header.
+     */
+    private fun openNumpad() {
+        typed = StringBuilder()
+        handler.removeCallbacks(commitTyped)
+        numpadValue.text = ""
+        numpad.visibility = View.VISIBLE
+        numpad.post { findViewById<View>(R.id.pad1).requestFocus() }
+    }
+
+    private fun closeNumpad() {
+        numpad.visibility = View.GONE
+        typed = StringBuilder()
+        focusRow(current)
+    }
+
+    private fun padDigit(digit: Int) {
+        if (typed.length >= 4) return
+        typed.append(digit)
+        numpadValue.text = typed
+    }
+
+    private fun padCommit() {
+        val entered = typed.toString()
+        typed = StringBuilder()
+        numpad.visibility = View.GONE
+        if (Unlock.consume(entered)) {
+            reorder()
+            focusRow(current)
+            return
+        }
+        val number = entered.toIntOrNull()
+        val indice = number?.let { indicePorNumero(it) } ?: -1
+        if (indice >= 0) {
+            closeList()
+            sintonizar(indice)
+        } else {
+            focusRow(current)
+        }
+    }
+
+    private fun typeDigit(digit: Int) {
+        // Quatro dígitos cabem: o catálogo não chega a mil canais, então um
+        // quarto dígito nunca é número de canal.
+        if (typed.length >= 4) typed = StringBuilder()
+        typed.append(digit)
+        showStatus(getString(R.string.channel_number, typed.toString()))
+        handler.removeCallbacks(commitTyped)
+        handler.postDelayed(commitTyped, 1_200)
+    }
+
+    private fun reorder() {
+        val playing = ordered.getOrNull(current)?.name
+        // O que o painel desligou some aqui, antes de a lista chegar à tela:
+        // canal sem nenhuma fonte não abriria mesmo.
+        ordered = Categorias.ordenar(MinhasListas.somar(Unlock.channels(), Unlock.unlocked))
+        numeros = Categorias.ordenarFixo(ordered).mapIndexed { i, c -> c.name to i + 1 }.toMap()
+        adapter.numero = { numeroDe(it) }
+        if (ordered.isEmpty()) { mostrarSemCanais(); return }
+        val found = ordered.indexOfFirst { it.name == playing }
+        // Ao trancar com um desses no ar, o nome ficaria à vista na faixa;
+        // volta para o primeiro canal comum antes de a lista encolher.
+        if (found < 0 && playing != null) play(0) else current = found.coerceAtLeast(0)
+        // O canal da segunda tela saiu da lista: ela volta a pedir um.
+        segunda?.canal?.let { c -> if (ordered.none { it.name == c.name }) segunda?.limpar() }
+        adapter.submit(ordered)
+        adapter.select(indiceAtivo())
+        montarSecoes()
+        listCount.text = ordered.size.toString()
+        if (!Vr.ativo) guiaAoVivo.atualizar(ordered)
+    }
+
+    /**
+     * Lista as fontes de um canal para escolher uma à mão, como no Mac e no
+     * site. A troca automática continua valendo a partir da escolhida: se ela
+     * cair, desce para a seguinte.
+     */
+    private fun escolherFonte(index: Int) {
+        val canal = ordered.getOrNull(index) ?: return
+        if (isFinishing || isDestroyed) return
+        if (!Vr.ativo && guiaAoVivo.aberto) guiaAoVivo.fechar()
+        if (listPanel.visibility == View.VISIBLE) {
+            closeList(mostrarFaixa = false) {
+                val indice = ordered.indexOfFirst { it.name == canal.name }
+                if (indice >= 0) escolherFonte(indice)
+            }
+            return
+        }
+        val marcada = if (index == current) sourceIndex else -1
+        Painel.mostrar(this, getString(R.string.fontes_titulo, canal.name), canal.sources.mapIndexed { i, fonte ->
+            // Nos canais 24h cada fonte é uma temporada: o nome dela ("Temporada 3")
+            // no lugar do número, e embaixo a qualidade. Nunca o servidor.
+            Painel.Item(fonte.nome ?: getString(R.string.fontes_item_amigavel, i + 1),
+                fonte.quality?.takeUnless { it.equals("Qualidade não informada", true) },
+                marcado = i == marcada) {
+                retries = 0
+                play(index, i)
+            }
+        }, getString(R.string.fontes_dica))
+    }
+
+    /** MENU com o vídeo na tela: tudo o que se pode fazer com o canal. */
+    private fun opcoes() {
+        if (multiTela) { opcoesDaMultiTela(); return }
+        val canal = ordered.getOrNull(current) ?: return
+        val favorito = Favorites.contains(canal.name)
+        val anterior = Preferencias.canalAnterior?.takeIf { n -> ordered.any { it.name == n } }
+        val itens = listOfNotNull(
+            Painel.Item(getString(R.string.opcoes_canais), icone = R.drawable.ic_list) { openList() },
+            Painel.Item(getString(R.string.guide), icone = R.drawable.ic_guide) { openGuide() },
+            // Nos óculos não há setas nem toque preciso para trocar de metade, então lá a multi tela
+            // não aparece; no celular e no tablet troca-se tocando na metade.
+            if (multiTelaPossivel()) Painel.Item(getString(R.string.multi_tela),
+                getString(R.string.multi_tela_detalhe), icone = R.drawable.ic_multi_tela) { entrarNaMultiTela() } else null,
+            anterior?.let { Painel.Item(getString(R.string.opcoes_anterior, it), icone = R.drawable.ic_history) { canalAnterior() } },
+            Painel.Item(getString(if (favorito) R.string.opcoes_desfavoritar else R.string.opcoes_favoritar),
+                icone = if (favorito) R.drawable.ic_star else R.drawable.ic_star_outline) {
+                Favorites.toggle(this, canal.name); reorder()
+            },
+            Painel.Item(getString(R.string.player_audio_legenda), icone = R.drawable.ic_subtitles) { Faixas.audioELegenda(this, player) },
+            Painel.Item(getString(R.string.player_qualidade), icone = R.drawable.ic_hd) { Faixas.qualidade(this, player) },
+            if (canal.sources.size > 1) Painel.Item(getString(R.string.opcoes_fontes),
+                getString(R.string.opcoes_fontes_dica, canal.sources.size), icone = R.drawable.ic_swap) { escolherFonte(current) } else null,
+            Painel.Item(getString(R.string.ajustes_timer),
+                if (TimerDeSono.ativo) getString(R.string.ajustes_timer_em, TimerDeSono.restanteMin()) else null,
+                icone = R.drawable.ic_timer) {
+                Painel.mostrar(this, getString(R.string.ajustes_timer), listOf(0, 30, 60, 90, 120).map { m ->
+                    Painel.Item(if (m == 0) getString(R.string.ajustes_desligado) else getString(R.string.ajustes_minutos, m)) {
+                        TimerDeSono.ligar(m)
+                    }
+                })
+            },
+            Painel.Item(getString(R.string.connect_titulo),
+                getString(R.string.connect_ip_pin, Connect.enderecoLocal(), Connect.pinAtual),
+                icone = R.drawable.ic_cast) { mostrarDialogoConectar() },
+            Painel.Item(getString(R.string.menu_eventos), icone = R.drawable.ic_football) {
+                startActivity(Intent(this, EventosActivity::class.java))
+            },
+            Painel.Item(getString(R.string.menu_ajustes), icone = R.drawable.ic_settings) {
+                AjustesActivity.abrir(this)
+            },
+
+        )
+        Painel.mostrar(this, canal.name, itens, Epg.nowNext(canal.name)?.first?.title)
+    }
+
+    /**
+     * As pílulas de seção no alto da lista. Focar uma já leva a lista até a
+     * seção; descer entra no primeiro canal dela.
+     */
+    private fun montarSecoes() {
+        val caixa = findViewById<android.widget.LinearLayout>(R.id.listSecoesItens)
+        caixa.removeAllViews()
+        val d = resources.displayMetrics.density
+        val secoes = ordered.map { Categorias.secao(it) }.distinct()
+        for (secao in secoes) {
+            caixa.addView(TextView(this).apply {
+                text = secao
+                tag = secao
+                textSize = 15f
+                setTextColor(androidx.core.content.ContextCompat.getColorStateList(context, R.color.texto_botao_ficha))
+                setBackgroundResource(R.drawable.botao_player)
+                isFocusable = true
+                setPadding((14 * d).toInt(), (6 * d).toInt(), (14 * d).toInt(), (6 * d).toInt())
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (6 * d).toInt() }
+                val primeiro = { ordered.indexOfFirst { Categorias.secao(it) == secao } }
+                setOnFocusChangeListener { _, foco ->
+                    if (foco) {
+                        listaFoco = primeiro().coerceAtLeast(0)
+                        (channels.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(listaFoco, 0)
+                    }
+                }
+                setOnClickListener { focusRow(primeiro().coerceAtLeast(0)) }
+                setOnKeyListener { _, codigo, evento ->
+                    if (evento.action == KeyEvent.ACTION_DOWN && codigo == KeyEvent.KEYCODE_DPAD_DOWN) {
+                        focusRow(primeiro().coerceAtLeast(0)); true
+                    } else false
+                }
+            })
+        }
+    }
+
+    // As views do cartão de prévia, achadas uma vez: o cartão é refeito a cada
+    // passo do foco pela lista, e segurar a seta são dezenas por segundo.
+    private val previa by lazy { findViewById<View>(R.id.previa) }
+    private val previaCanal by lazy { findViewById<TextView>(R.id.previaCanal) }
+    private val previaAgora by lazy { findViewById<TextView>(R.id.previaAgora) }
+    private val previaDetalhe by lazy { findViewById<TextView>(R.id.previaDetalhe) }
+    private val secoesItens by lazy { findViewById<android.widget.LinearLayout>(R.id.listSecoesItens) }
+
+    /** Cartão do canal focado na lista e a aba da seção dele acesa. */
+    private fun mostrarPrevia(index: Int) {
+        val canal = ordered.getOrNull(index) ?: return
+        val par = Epg.nowNext(canal.name)
+        val agora = par?.first
+        val depois = par?.second
+        previaCanal.text =
+            listOfNotNull(numeroDe(canal).takeIf { it > 0 }?.toString(), canal.name).joinToString("  ")
+        previaAgora.text = agora?.title ?: getString(R.string.previa_sem_guia)
+        previaDetalhe.text = listOfNotNull(
+            agora?.let { getString(R.string.times, clock.format(Date(it.start)), clock.format(Date(it.stop)),
+                ((it.stop - System.currentTimeMillis()) / 60_000L).coerceAtLeast(0)) },
+            depois?.let { getString(R.string.up_next, it.title) },
+        ).joinToString("\n")
+        previa.visibility = if (listPanel.visibility == View.VISIBLE) View.VISIBLE else View.GONE
+        val secao = Categorias.secao(canal)
+        val caixa = secoesItens
+        for (i in 0 until caixa.childCount) {
+            val chip = caixa.getChildAt(i)
+            val esta = chip.tag == secao
+            if (chip.isSelected != esta) chip.isSelected = esta
+            if (esta && !chip.hasFocus()) {
+                (caixa.parent as? android.widget.HorizontalScrollView)?.smoothScrollTo(
+                    (chip.left - 40).coerceAtLeast(0), 0)
+            }
+        }
+    }
+
+    private fun focarSecaoAtual() {
+        val secao = ordered.getOrNull(listaFoco)?.let { Categorias.secao(it) }
+        val caixa = findViewById<android.widget.LinearLayout>(R.id.listSecoesItens)
+        (caixa.findViewWithTag<View>(secao) ?: caixa.getChildAt(0) ?: listHeader).requestFocus()
+    }
+
+    /**
+     * Favorita (ou tira) um canal pela lista. O canal muda de lugar — sobe para
+     * Favoritos ou volta à seção dele — e o foco vai junto: antes ele caía no
+     * cabeçalho e o índice guardado passava a apontar outro canal, que o
+     * MENU seguinte favoritava por engano.
+     */
+    private fun favoritarNaLista(index: Int) {
+        val nome = ordered.getOrNull(index)?.name ?: return
+        Favorites.toggle(this, nome)
+        reorder()
+        val novo = ordered.indexOfFirst { it.name == nome }
+        if (listPanel.visibility == View.VISIBLE && novo >= 0) focusRow(novo)
+    }
+
+    /** Volta ao canal de antes — o "zap" entre dois canais, como no controle da TV. */
+    private fun canalAnterior() {
+        val nome = Preferencias.canalAnterior ?: return
+        val indice = ordered.indexOfFirst { it.name == nome }
+        if (indice >= 0) play(indice)
+    }
+
+    /**
+     * Nenhuma fonte abriu. Em vez de um aviso sem saída, o que dá para fazer:
+     * tentar de novo, ou ir a um canal parecido que esteja funcionando.
+     */
+    private fun canalForaDoAr(canal: Channel) {
+        handler.removeCallbacks(sourceTimeout)
+        handler.removeCallbacks(tentarReconexao)
+        repeticaoAoVivo.reiniciar(false)
+        tocouAvisado = false
+        player.stop()
+        esperandoImagem = false
+        carregandoImagem.visibility = View.GONE
+        ajustarVolume(volumeDesejado)
+        if (!Vr.ativo) guiaAoVivo.fechar()
+        status.visibility = View.GONE
+        avisarSinal(getString(R.string.unavailable))
+        if (isFinishing || isDestroyed) return
+        val secao = Categorias.de(canal)
+        val parecidos = ordered.filter { it.name != canal.name && Categorias.de(it) == secao }.take(4)
+        Painel.mostrar(this, getString(R.string.fora_titulo, canal.name), listOf(
+            Painel.Item(getString(R.string.player_tentar_de_novo), icone = R.drawable.ic_replay) { retries = 0; play(current, 0) },
+        ) + parecidos.map { c ->
+            Painel.Item(getString(R.string.fora_ir, c.name), Epg.nowNext(c.name)?.first?.title) {
+                retries = 0; play(ordered.indexOf(c))
+            }
+        } + Painel.Item(getString(R.string.opcoes_canais), icone = R.drawable.ic_list) { openList() },
+            getString(R.string.fora_sub))
+    }
+
+    private fun openGuide() {
+        if (listPanel.visibility == View.VISIBLE) {
+            closeList(mostrarFaixa = false) { openGuide() }
+            return
+        }
+        val canal = ordered.getOrNull(indiceAtivo()) ?: ordered.getOrNull(current) ?: return
+        mostrarProgramacao(canal)
+    }
+
+    private fun mostrarProgramacao(canal: Channel) {
+        val agora = System.currentTimeMillis()
+        val programas = Epg.schedule(canal.name).filter { it.stop > agora }
+        val itens = listOf(
+            Painel.Item(getString(R.string.guide_assistir_canal, canal.name)) {
+                val indice = ordered.indexOfFirst { it.name == canal.name }
+                if (indice >= 0) sintonizar(indice)
+            },
+            Painel.Item(getString(R.string.guide_outros_canais)) {
+                Painel.mostrar(this, getString(R.string.guide), ordered.map { outro ->
+                    Painel.Item(outro.name, Epg.nowNext(outro.name)?.first?.title,
+                        marcado = outro.name == canal.name) { mostrarProgramacao(outro) }
+                })
+            },
+        ) + programas.map { programa ->
+            Painel.Item("${clock.format(Date(programa.start))}–${clock.format(Date(programa.stop))} · ${programa.title}",
+                listOfNotNull(programa.shortDetail, programa.description).joinToString(" · "), fecha = false) {}
+        }
+        Painel.mostrar(this, canal.name, itens,
+            getString(if (programas.isEmpty()) R.string.guide_sem_programacao else R.string.guide))
+    }
+
+    private fun mostrarSemCanais() {
+        handler.removeCallbacks(tentarReconexao)
+        handler.removeCallbacks(sourceTimeout)
+        if (!isFinishing) {
+            SemListaActivity.abrir(this)
+            finish()
+        }
+    }
+
+    // MARK: - Multi tela
+
+    /**
+     * Dois canais lado a lado, como no Mac e no Windows. A metade esquerda é
+     * o player de sempre (com fontes, vigia e telemetria); a direita é a
+     * `SegundaTela`, que só existe enquanto a multi tela está aberta.
+     *
+     * Só a metade ativa (contorno ciano) tem som, e é nela que a lista, as
+     * setas de canal e os números sintonizam. Esquerda e direita trocam de
+     * metade; OK mostra a faixa do canal ativo e, com ela na tela, abre a
+     * lista; VOLTAR fecha a segunda tela.
+     */
+    private var multiTela = false
+    /// 0 = metade esquerda (o player principal), 1 = a direita.
+    private var telaAtiva = 0
+    private var segunda: SegundaTela? = null
+    /// O limite de qualidade do canal principal antes de entrar, para voltar
+    /// a ele ao sair (inclusive o que a pessoa escolheu em Qualidade).
+    private var limiteAntes: TrackSelectionParameters? = null
+    private val esconderDica = Runnable { findViewById<View>(R.id.multiDica).visibility = View.GONE }
+
+    /** O canal da metade ativa, na lista; fora da multi tela, o que está no ar. */
+    private fun indiceAtivo(): Int {
+        if (!multiTela || telaAtiva == 0) return current
+        val nome = segunda?.canal?.name ?: return current
+        return ordered.indexOfFirst { it.name == nome }.takeIf { it >= 0 } ?: current
+    }
+
+    /** Sintoniza na metade ativa — a lista, os números e as setas passam por aqui. */
+    private fun sintonizar(index: Int) {
+        val tela2 = segunda
+        if (multiTela && telaAtiva == 1 && tela2 != null) {
+            val canal = ordered.getOrNull(index) ?: return
+            // Escolher de novo o canal que já toca não reconecta: só mostra a faixa.
+            if (tela2.canal?.name != canal.name || !tela2.tocando) tela2.tocar(canal)
+            adapter.select(index)
+            revealBanner()
+            Connect.notificarMudancaDeEstado()
+        } else if (index == current && ::player.isInitialized && player.isPlaying) {
+            adapter.select(index)
+            revealBanner()
+            Connect.notificarMudancaDeEstado()
+        } else {
+            play(index)
+        }
+    }
+
+    private fun zapear(sentido: Int) {
+        if (ordered.isEmpty()) return
+        // Segunda tela ainda vazia: cima/baixo partem do canal da esquerda.
+        sintonizar((indiceAtivo() + sentido + ordered.size) % ordered.size)
+    }
+
+    private fun entrarNaMultiTela() {
+        if (multiTela || !multiTelaPossivel()) return
+        val tela2 = SegundaTela(this, findViewById(R.id.player2), findViewById(R.id.multiRotulo2),
+            findViewById(R.id.multiNome2), findViewById(R.id.multiLogo2), findViewById(R.id.multiInicial2),
+            findViewById(R.id.multiAviso2), { numeroDe(it) }) {
+            // Fora do callback do player: soltá-lo dentro do próprio erro dele
+            // deixaria o resto do aviso rodando sobre um player já solto.
+            handler.post { sairDaMultiTela(manterAtiva = false, semSuporte = true) }
+        }
+        if (!tela2.ligar()) {
+            tela2.soltar()
+            avisarSemSuporte()
+            return
+        }
+        multiTela = true
+        segunda = tela2
+        limiteAntes = player.trackSelectionParameters
+        player.trackSelectionParameters = SegundaTela.limite(player.trackSelectionParameters)
+        handler.removeCallbacks(hideBanner)
+        banner.visibility = View.GONE
+        arrumarTelas()
+        atualizarRotulo()
+        ativarTela(1)
+        mostrarDica()
+        // A metade nova começa vazia: a lista já abre para escolher o canal dela.
+        openList()
+        Connect.notificarMudancaDeEstado()
+    }
+
+    /**
+     * Volta para uma tela só. `manterAtiva` põe o canal da metade direita em
+     * tela cheia quando era ela a ativa (VOLTAR, sair pelo menu, ir para outra
+     * tela); sem isso fica o da esquerda, que já está tocando.
+     */
+    private fun sairDaMultiTela(manterAtiva: Boolean = true, semSuporte: Boolean = false) {
+        if (!multiTela) return
+        val daDireita = if (manterAtiva && telaAtiva == 1) segunda?.canal?.name else null
+        multiTela = false
+        telaAtiva = 0
+        segunda?.soltar()
+        segunda = null
+        ajustarVolume(1f)
+        Connect.tvAudio = "0"
+        // O decodificador do principal foi aberto para a metade, com a
+        // qualidade limitada: solto, ele volta no tamanho cheio e já na
+        // superfície nova. Reaproveitado, troca de resolução no meio e alguns
+        // decodificadores desenham o quadro pequeno num canto da tela.
+        player.stop()
+        limiteAntes?.let { player.trackSelectionParameters = it }
+        limiteAntes = null
+        handler.removeCallbacks(esconderDica)
+        arrumarTelas()
+        val indice = daDireita?.let { n -> ordered.indexOfFirst { it.name == n } } ?: -1
+        if (indice >= 0) play(indice) else { player.seekToDefaultPosition(); player.prepare(); adapter.select(current); revealBanner() }
+        if (semSuporte) avisarSemSuporte()
+        Connect.notificarMudancaDeEstado()
+    }
+
+    /** TV Box, celular e tablet; nos óculos não (ver opcoes). */
+    private fun multiTelaPossivel() = !Vr.ativo || Vr.celular
+
+    private fun avisarSemSuporte() {
+        showStatus(getString(R.string.multi_tela_sem_suporte))
+        handler.removeCallbacks(esconderStatus)
+        handler.postDelayed(esconderStatus, 4_000)
+    }
+
+    /** Metades iguais na multi tela; o player principal em tela cheia fora dela. */
+    private fun arrumarTelas() {
+        val raiz = playerView.parent as View
+        val metade = (raiz.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) / 2
+        playerView.layoutParams = (playerView.layoutParams as FrameLayout.LayoutParams).apply {
+            width = if (multiTela) metade else ViewGroup.LayoutParams.MATCH_PARENT
+            gravity = Gravity.START
+        }
+        val vista2 = findViewById<View>(R.id.player2)
+        vista2.layoutParams = (vista2.layoutParams as FrameLayout.LayoutParams).apply {
+            width = metade
+            gravity = Gravity.END
+        }
+        vista2.visibility = if (multiTela) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.multiTela).visibility = if (multiTela) View.VISIBLE else View.GONE
+        posicionarBanner()
+        // A superfície do vídeo guarda o tamanho da metade depois de crescer
+        // de volta, e o compositor ainda desenha uma cópia pequena no canto.
+        // Religar o player a ela faz o sistema recriar a superfície no tamanho
+        // novo — um quadro preto, só na troca.
+        playerView.player = null
+        playerView.player = player
+    }
+
+    /** Acende a metade escolhida e passa o som para ela. */
+    private fun ativarTela(qual: Int) {
+        if (!multiTela) return
+        telaAtiva = if (qual == 1 && segunda != null) 1 else 0
+        val celularOuvindo = Connect.temAudioNoCelular()
+        if (!celularOuvindo) {
+            if (Connect.tvAudio == "mute") {
+                ajustarVolume(0f)
+                segunda?.comSom = false
+            } else {
+                ajustarVolume(if (telaAtiva == 0) 1f else 0f)
+                segunda?.comSom = (telaAtiva == 1)
+                Connect.tvAudio = if (telaAtiva == 0) "0" else "1"
+            }
+        } else {
+            when (Connect.tvAudio) {
+                "0" -> {
+                    ajustarVolume(1f)
+                    segunda?.comSom = false
+                }
+                "1" -> {
+                    ajustarVolume(0f)
+                    segunda?.comSom = true
+                }
+                "mute" -> {
+                    ajustarVolume(0f)
+                    segunda?.comSom = false
+                }
+                else -> {
+                    ajustarVolume(if (telaAtiva == 0) 1f else 0f)
+                    segunda?.comSom = (telaAtiva == 1)
+                }
+            }
+        }
+        findViewById<View>(R.id.multiTela1).setBackgroundResource(
+            if (telaAtiva == 0) R.drawable.bg_tela_ativa else R.drawable.bg_tela_inativa)
+        findViewById<View>(R.id.multiTela2).setBackgroundResource(
+            if (telaAtiva == 1) R.drawable.bg_tela_ativa else R.drawable.bg_tela_inativa)
+        adapter.select(indiceAtivo())
+        posicionarBanner()
+        Connect.notificarMudancaDeEstado()
+    }
+
+    /// O recuo lateral da faixa em tela cheia, lido do layout na primeira vez.
+    private var recuoDaFaixa = -1
+
+    /**
+     * A faixa do canal (a mesma do OK em tela cheia) fica sobre a metade
+     * ativa na multi tela, com recuo menor para caber; fora dela, a tela toda.
+     */
+    private fun posicionarBanner() {
+        if (recuoDaFaixa < 0) recuoDaFaixa = banner.paddingStart
+        val recuo = if (multiTela) (24 * resources.displayMetrics.density).toInt() else recuoDaFaixa
+        banner.setPaddingRelative(recuo, banner.paddingTop, recuo, banner.paddingBottom)
+        val metade = ((playerView.parent as View).width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) / 2
+        banner.layoutParams = (banner.layoutParams as FrameLayout.LayoutParams).apply {
+            width = if (multiTela) metade else ViewGroup.LayoutParams.MATCH_PARENT
+            gravity = Gravity.BOTTOM or if (multiTela && telaAtiva == 1) Gravity.END else Gravity.START
+        }
+    }
+
+    /** A faixa está falando do canal da metade direita (não do player principal). */
+    private fun faixaDaSegunda(): Boolean = multiTela && telaAtiva == 1 && segunda?.canal != null
+
+    /** Logo, número e nome do canal da metade esquerda; a direita cuida do dela. */
+    private fun atualizarRotulo() {
+        val canal = ordered.getOrNull(current) ?: return
+        SegundaTela.preencherRotulo(findViewById(R.id.multiNome1), findViewById(R.id.multiLogo1),
+            findViewById(R.id.multiInicial1), canal, numeroDe(canal))
+    }
+
+    private fun mostrarDica() {
+        // Com a lista aberta a dica ficaria por cima da legenda dela; com a
+        // faixa do canal, por cima da faixa.
+        if (listPanel.isVisible) return
+        handler.removeCallbacks(hideBanner)
+        banner.visibility = View.GONE
+        findViewById<TextView>(R.id.multiDica).apply {
+            setText(if (Vr.ativo) R.string.multi_tela_dica_toque else R.string.multi_tela_dica)
+            visibility = View.VISIBLE
+        }
+        handler.removeCallbacks(esconderDica)
+        handler.postDelayed(esconderDica, BANNER_MS)
+    }
+
+    /**
+     * Teclas sobre a imagem na multi tela; nulo segue o caminho de sempre
+     * (cima/baixo, números, MENU, VOLTAR). Guia e LAST ficam de fora: o guia
+     * é outra tela, e sair para ela fecharia a multi tela.
+     */
+    private fun teclaNaMultiTela(keyCode: Int): Boolean? = when (keyCode) {
+        // Trocar de metade mostra a faixa da que acabou de ganhar o som.
+        KeyEvent.KEYCODE_DPAD_LEFT -> { ativarTela(0); revealBanner(); true }
+        KeyEvent.KEYCODE_DPAD_RIGHT -> { ativarTela(1); revealBanner(); true }
+        KeyEvent.KEYCODE_INFO -> { revealBanner(); true }
+        KeyEvent.KEYCODE_GUIDE, KeyEvent.KEYCODE_LAST_CHANNEL,
+        KeyEvent.KEYCODE_CAPTIONS -> { mostrarDica(); true }
+        else -> null
+    }
+
+    /** MENU na multi tela: o que vale para as duas metades. */
+    private fun opcoesDaMultiTela() {
+        val nome = if (telaAtiva == 1) segunda?.canal?.name else ordered.getOrNull(current)?.name
+        Painel.mostrar(this, getString(R.string.multi_tela), listOf(
+            Painel.Item(getString(R.string.opcoes_canais), icone = R.drawable.ic_list) { openList() },
+            Painel.Item(getString(R.string.multi_tela_sair), icone = R.drawable.ic_close) { sairDaMultiTela() },
+            Painel.Item(getString(R.string.connect_titulo),
+                getString(R.string.connect_ip_pin, Connect.enderecoLocal(), Connect.pinAtual),
+                icone = R.drawable.ic_cast) { mostrarDialogoConectar() },
+            Painel.Item(getString(R.string.menu_ajustes), icone = R.drawable.ic_settings) {
+                AjustesActivity.abrir(this)
+            },
+
+        ), nome)
+    }
+
+    // MARK: - Óculos de VR
+
+    /**
+     * Só nos óculos (ver Vr.kt): lá não há D-pad, e o ao vivo inteiro vivia
+     * nele. Pinçar sobre o vídeo mostra esta barra, que faz o que as teclas
+     * fazem — lista, canal acima e abaixo, guia, fontes, número, opções.
+     */
+    private var barraVr: View? = null
+    private val esconderBarraVrDepois = Runnable { esconderBarraVr() }
+
+    private fun esconderBarraVr() {
+        handler.removeCallbacks(esconderBarraVrDepois)
+        barraVr?.visibility = View.GONE
+    }
+
+    private fun mostrarBarraVr() {
+        val barra = barraVr ?: return
+        revealBanner()
+        barra.visibility = View.VISIBLE
+        adiarBarraVr()
+    }
+
+    private fun adiarBarraVr() {
+        handler.removeCallbacks(esconderBarraVrDepois)
+        handler.postDelayed(esconderBarraVrDepois, BANNER_MS)
+    }
+
+    private fun montarVr() {
+        val raiz = findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as? android.widget.FrameLayout ?: return
+        // Por cima do vídeo e embaixo de todo o resto: com a lista aberta, tocar
+        // na imagem fecha a lista (o "tocar fora"); sem ela, mostra ou esconde
+        // a barra.
+        // Na multi tela, tocar na metade que não está ativa passa o som e a
+        // lista para ela (as setas laterais do controle, no toque).
+        var toqueX = 0f
+        val camada = Vr.camadaDeToque(raiz, 1) {
+            val metade = if (toqueX < raiz.width / 2f) 0 else 1
+            when {
+                listPanel.visibility == View.VISIBLE -> closeList()
+                multiTela && metade != telaAtiva -> { ativarTela(metade); revealBanner() }
+                barraVr?.visibility == View.VISIBLE -> { esconderBarraVr(); handler.removeCallbacks(hideBanner); hideBanner.run() }
+                else -> mostrarBarraVr()
+            }
+        }
+        @Suppress("ClickableViewAccessibility")
+        camada.setOnTouchListener { _, e -> toqueX = e.x; false }
+        val fileira = Vr.fileira(this)
+        fun botao(texto: String, icone: Int, soIcone: Boolean = false, acao: () -> Unit) {
+            val b = Vr.botao(this, if (soIcone) "" else texto, icone) { acao(); if (barraVr?.visibility == View.VISIBLE) adiarBarraVr() }
+            b.contentDescription = texto
+            Vr.adicionar(fileira, b)
+        }
+        botao(getString(R.string.vr_voltar), R.drawable.ic_arrow_back) { Vr.voltar(this) }
+        botao(getString(R.string.vr_canais), R.drawable.ic_list) { openList() }
+        // Mesmo sentido das setas do controle: para cima é o canal de cima da lista.
+        // Na multi tela andam na metade ativa, como as setas do controle.
+        botao(getString(R.string.vr_canal_mais), R.drawable.ic_arrow_up, soIcone = true) { zapear(-1) }
+        botao(getString(R.string.vr_canal_menos), R.drawable.ic_arrow_down, soIcone = true) { zapear(1) }
+        botao(getString(R.string.guide), R.drawable.ic_guide) { esconderBarraVr(); openGuide() }
+        botao(getString(R.string.vr_fontes), R.drawable.ic_swap) { escolherFonte(current) }
+        botao(getString(R.string.vr_anterior), R.drawable.ic_history) { canalAnterior() }
+        botao(getString(R.string.vr_numero), R.drawable.ic_dialpad) { esconderBarraVr(); openNumpad() }
+        botao(getString(R.string.vr_opcoes), R.drawable.ic_more) { opcoes() }
+        val rolagem = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            setBackgroundResource(R.drawable.bg_top_scrim)
+            addView(fileira)
+            visibility = View.GONE
+        }
+        raiz.addView(rolagem, android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.TOP))
+        barraVr = rolagem
+
+        // Lista: um botão de fechar no cabeçalho (o BACK de quem não tem controle).
+        (listHeader as? ViewGroup)?.addView(Vr.botao(this, "", R.drawable.ic_close) { closeList() }.apply {
+            contentDescription = getString(R.string.vr_fechar)
+        })
+        findViewById<TextView>(R.id.listLegenda)?.setText(R.string.vr_legenda_lista)
+
+        // Teclado numérico: tocar fora fecha; tocar no quadro não.
+        numpad.setOnClickListener { closeNumpad() }
+        findViewById<View>(R.id.numpadContainer)?.isClickable = true
+        (numpad as? ViewGroup)?.getChildAt(0)?.isClickable = true
+    }
+
+    // MARK: - Overlays
+
+    private fun openList() {
+        esconderBarraVr()
+        // Mantém a lista legível quando as duas telas estão abertas.
+        if (multiTela) {
+            esconderDica.run()
+            findViewById<View>(R.id.multiRotulo1).alpha = 0f
+            findViewById<View>(R.id.multiRotulo2).alpha = 0f
+        }
+        listaAbertaEm = SystemClock.elapsedRealtime()
+        handler.removeCallbacks(hideBanner)
+        banner.visibility = View.GONE
+        adapter.refresh()
+        listPanel.visibility = View.VISIBLE
+        // Ainda não foi medido na primeira abertura, então a largura vem do
+        // recurso: ler width aqui daria zero e a entrada não aconteceria.
+        listPanel.translationX = -panelWidth()
+        // O cabeçalho é focável e vem primeiro na ordem de percurso, então o
+        // sistema o escolhe sozinho quando o painel aparece; o post abaixo
+        // resolve isso pousando no canal atual assim que a lista tiver layout.
+        // Repetir a mesma chamada aqui no fim da animação, sem condição, foi o
+        // bug: se a pessoa já tivesse descido a lista nesses 180ms, o painel
+        // arrastava o foco de volta para o canal atual, "subindo" a seleção
+        // bem na hora em que ela ainda estava apertando para baixo. Só refaz o
+        // foco se ele realmente escapou da lista (ficou no cabeçalho).
+        listPanel.animate().translationX(0f).setDuration(180)
+            .withEndAction { if (!channels.hasFocus()) focusRow(indiceAtivo()) }.start()
+        // Mede o espaço disponível depois do layout.
+        listPanel.post { encaixarAoLadoDaLista() }
+        channels.post { focusRow(indiceAtivo()) }
+    }
+
+    /**
+     * Anda um item na lista aberta e rola/foca para lá.
+     *
+     * Não usa a busca de foco do RecyclerView (`View.focusSearch`), que é o que
+     * bugava segurando a tecla num TV Box fraco: os eventos chegam mais rápido
+     * do que ele consegue medir a próxima linha, a busca falha e o sistema
+     * "recupera" pulando pro topo — daí o loop subindo. Aqui a posição é
+     * contada por nós, então cada tecla sempre sabe exatamente para onde ir.
+     */
+    /**
+     * Segurar a seta acelera: um por um no começo, depois de três em três,
+     * depois de dez em dez — descer 900 canais um a um não é navegar.
+     */
+    private fun passo(event: KeyEvent?): Int {
+        val r = event?.repeatCount ?: 0
+        return when { r > 24 -> 10; r > 8 -> 3; else -> 1 }
+    }
+
+    /** Vai ao primeiro canal da seção anterior/seguinte. */
+    private fun pularSecao(sentido: Int) {
+        val secoes = ordered.map { Categorias.secao(it) }
+        val atual = secoes.getOrNull(listaFoco) ?: return
+        val alvo = if (sentido > 0) {
+            (listaFoco until ordered.size).firstOrNull { secoes[it] != atual }
+        } else {
+            val inicioAtual = (listaFoco downTo 0).lastOrNull { secoes[it] == atual } ?: 0
+            if (inicioAtual == 0) null
+            else { val anterior = secoes[inicioAtual - 1]; (inicioAtual - 1 downTo 0).lastOrNull { secoes[it] == anterior } }
+        } ?: return
+        focusRow(alvo)
+        showStatus(secoes[alvo])
+        handler.removeCallbacks(esconderStatus)
+        handler.postDelayed(esconderStatus, 1_200)
+    }
+
+    private val esconderStatus = Runnable { status.visibility = View.GONE }
+
+    private fun moverFoco(delta: Int) {
+        val alvo = (listaFoco + delta).coerceAtMost(ordered.size - 1)
+        if (listaFoco + delta < 0) { if (listaFoco == 0) focarSecaoAtual() else focusRow(0); return }
+        if (alvo == listaFoco) return
+        listaFoco = alvo
+        focusRow(alvo)
+    }
+
+    /**
+     * Scrolls to a row and focuses it, retrying until the holder exists.
+     *
+     * A scroll only finishes on the next layout pass, so asking for the holder
+     * straight away finds nothing, and the list would open with nothing focused
+     * — a remote that does nothing. `geracao` faz uma chamada velha desistir se
+     * `moverFoco` já pediu outra posição enquanto o post estava na fila —
+     * sem isso, segurar a tecla podia deixar dois pedidos de foco correndo ao
+     * mesmo tempo e o mais lento vencer, arrastando a seleção para trás.
+     */
+    private fun focusRow(index: Int, attempts: Int = 8, geracao: Int = ++focoGeracao) {
+        if (geracao != focoGeracao) return
+        listaFoco = index
+        mostrarPrevia(index)
+        (channels.layoutManager as LinearLayoutManager)
+            .scrollToPositionWithOffset(index, channels.height / 3)
+        channels.post {
+            if (geracao != focoGeracao) return@post
+            if (channels.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus() == true) return@post
+            if (attempts > 0) focusRow(index, attempts - 1, geracao)
+            else channels.getChildAt(0)?.requestFocus()
+        }
+    }
+
+    private fun panelWidth(): Float =
+        if (listPanel.width > 0) listPanel.width.toFloat() else 430 * resources.displayMetrics.density
+
+    /**
+     * Com a lista aberta, o vídeo vai para a direita dela: abaixo do menu do
+     * topo e acima do cartão de prévia, inteiro.
+     */
+    private fun encaixarAoLadoDaLista() {
+        if (listPanel.visibility != View.VISIBLE) return
+        val d = resources.displayMetrics.density
+        val raiz = findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        val margem = 16 * d
+        val topo = margem / 2
+        val previa = findViewById<View>(R.id.previa)
+        // O cartão de prévia fica embaixo à direita; o vídeo para logo acima
+        // dele — pela posição real do cartão, e não pela altura lida antes do
+        // layout, que sobrava e deixava o vídeo menor do que cabia.
+        val baixo = if (previa.visibility == View.VISIBLE && previa.top > 0) previa.top - 8 * d
+                    else raiz.height - (150 * d + 40 * d + 8 * d)
+        palco.encaixar(panelWidth() + margem, topo, raiz.width - margem, baixo)
+    }
+
+    override fun painelAbriu(larguraPx: Int) {
+        handler.removeCallbacks(voltarDoPainel)
+        // Com a lista aberta, o vídeo já está fora do caminho.
+        if (listPanel.visibility == View.VISIBLE) return
+        handler.removeCallbacks(hideBanner)
+        banner.visibility = View.GONE
+        val raiz = findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        val d = resources.displayMetrics.density
+        val margem = 16 * d
+        // Até a borda do painel: a janela dele é opaca e cortaria o vídeo.
+        palco.encaixar(margem, margem, raiz.width - larguraPx - 8 * d, raiz.height - margem)
+    }
+
+    override fun painelFechou() {
+        // Um painel que fecha e outro que abre em seguida (opções → fontes)
+        // não pode fazer o vídeo ir e voltar: espera um instante para ver.
+        handler.removeCallbacks(voltarDoPainel)
+        handler.postDelayed(voltarDoPainel, 140)
+    }
+
+    private val voltarDoPainel = Runnable {
+        if (Painel.dialogVisivel() != null || isFinishing) return@Runnable
+        if (listPanel.visibility == View.VISIBLE) encaixarAoLadoDaLista() else palco.soltar()
+    }
+
+    private fun closeList(mostrarFaixa: Boolean = true, aoFechar: (() -> Unit)? = null) {
+        if (Painel.dialogVisivel() == null) palco.soltar()
+        findViewById<View>(R.id.multiRotulo1).alpha = 1f
+        findViewById<View>(R.id.multiRotulo2).alpha = 1f
+        findViewById<View>(R.id.previa).visibility = View.GONE
+        numpad.visibility = View.GONE
+        listPanel.animate().translationX(-panelWidth()).setDuration(160)
+            .withEndAction {
+                listPanel.visibility = View.GONE
+                listPanel.translationX = 0f
+                aoFechar?.invoke()
+            }.start()
+        playerView.requestFocus()
+        if (mostrarFaixa) revealBanner()
+    }
+
+    private fun updateBanner() {
+        // Na multi tela, a faixa é da metade ativa — que pode ser a direita.
+        val tela2 = segunda?.takeIf { faixaDaSegunda() }
+        val channel = tela2?.canal ?: ordered.getOrNull(current) ?: return
+        bannerNumber.text = numeroDe(channel).takeIf { it > 0 }?.toString().orEmpty()
+        val fonte = channel.sources.getOrNull(tela2?.fonteAtual ?: sourceIndex)
+        // Canal 24h: qual temporada está no ar.
+        bannerChannel.text = listOfNotNull(channel.name, fonte?.nome).joinToString(" · ")
+        // A resolução medida é a do player principal; da direita não há.
+        if (tela2 != null) bannerResolution.visibility = View.GONE
+        // No lugar de "fonte 1/3 · servidor", o que o controle faz aqui.
+        bannerSource.text = when {
+            fonte == null -> ""
+            multiTela -> getString(if (Vr.ativo) R.string.multi_tela_banner_dica_toque else R.string.multi_tela_banner_dica)
+            else -> getString(if (Vr.ativo) R.string.vr_banner_dica else R.string.banner_dica)
+        }
+        bannerSource.visibility =
+            if (bannerSource.text.isNullOrEmpty()) View.GONE else View.VISIBLE
+        if (channel.logo != null) bannerLogo.load(channel.logo)
+        else { bannerLogo.dispose(); bannerLogo.setImageDrawable(null) }
+
+        val now = System.currentTimeMillis()
+        bannerClock.visibility = if (multiTela) View.GONE else View.VISIBLE
+        bannerClock.text = dataDoBanner.format(Date(now))
+        val pair = Epg.nowNext(channel.name, now)
+        val onAir = pair?.first
+        bannerProgramme.text = getString(R.string.banner_agora,
+            onAir?.title ?: getString(R.string.previa_sem_guia))
+        bannerTimes.text = pair?.second?.let { getString(R.string.up_next, it.title) }.orEmpty()
+        bannerTimes.visibility = if (pair?.second == null) View.GONE else View.VISIBLE
+        bannerProgress.progress = ((onAir?.progress(now) ?: 0f) * 1000).toInt()
+    }
+
+    private fun atualizarResolucao() {
+        val tamanho = ultimoVideoSize ?: return
+        var rotulo = rotuloResolucao(tamanho.width, tamanho.height)
+
+        // Tenta pegar do formato se existir (quando a lista informa)
+        var bitrateDaFaixa = player.videoFormat?.bitrate ?: androidx.media3.common.Format.NO_VALUE
+        if (bitrateDaFaixa <= 0) {
+            for (grupo in player.currentTracks.groups) {
+                if (grupo.type == androidx.media3.common.C.TRACK_TYPE_VIDEO && grupo.isSelected) {
+                    for (i in 0 until grupo.length) {
+                        if (grupo.isTrackSelected(i)) {
+                            val b = grupo.getTrackFormat(i).bitrate
+                            if (b > 0) bitrateDaFaixa = b
+                            break
+                        }
+                    }
+                }
+                if (bitrateDaFaixa > 0) break
+            }
+        }
+
+        // Usa o da faixa se existir, senão usa o dinâmico
+        val bitrateFinal = if (bitrateDaFaixa > 0) bitrateDaFaixa.toLong() else bitrateDinâmicoBps
+
+        if (bitrateFinal > 0) {
+            rotulo += String.format(java.util.Locale.US, " · %.1f Mbps", bitrateFinal / 1_000_000f)
+        }
+        if (rotulo.isNotEmpty()) rotulo += Upscaling.sufixoResolucao(tamanho.height)
+
+        bannerResolution.text = rotulo
+        bannerResolution.visibility = if (rotulo.isEmpty() || faixaDaSegunda()) android.view.View.GONE else android.view.View.VISIBLE
+    }
+
+    private fun revealBanner() {
+        if (listPanel.visibility == View.VISIBLE || (!Vr.ativo && guiaAoVivo.aberto)) return
+        // Na multi tela a faixa vai para a metade ativa (ver posicionarBanner).
+        // Com a direita ainda vazia não há canal a mostrar: fica a dica.
+        if (multiTela) {
+            if (telaAtiva == 1 && segunda?.canal == null) { mostrarDica(); return }
+            esconderDica.run()
+            posicionarBanner()
+        }
+        updateBanner()
+        if (!faixaDaSegunda()) atualizarResolucao()
+        handler.removeCallbacks(hideBanner)
+        banner.animate().cancel()
+        if (banner.visibility != View.VISIBLE) {
+            banner.alpha = 0f
+            banner.visibility = View.VISIBLE
+            banner.animate().alpha(1f).setDuration(180).start()
+        } else {
+            banner.alpha = 1f
+        }
+        handler.postDelayed(hideBanner, BANNER_MS)
+    }
+
+    private fun showStatus(text: String) {
+        status.text = text
+        status.visibility = View.VISIBLE
+    }
+
+    /**
+     * Fora da tela por mais de 45 s (a Programação aberta, o HOME), o player
+     * solta o fluxo: decodificador e buffer ficavam presos sob a outra tela,
+     * dezenas de MB num TV Box de 1 GB. Voltar antes disso não rebufferiza.
+     */
+    private val soltarPlayerParado = Runnable {
+        if (emSegundoPlano && ::player.isInitialized) {
+            player.stop()
+            playerSolto = true
+        }
+    }
+    private var playerSolto = false
+
+    /** Os relógios do Ao vivo, que só fazem sentido com ele na tela. */
+    private fun pararRelogios() {
+        handler.removeCallbacks(tick)
+        handler.removeCallbacks(vigiaDeImagem)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (Connect.listener === this) Connect.listener = null
+        if (semCanais || !::player.isInitialized) return
+        if (player.playerError != null) playerSolto = true
+        if (!Vr.ativo) guiaAoVivo.fechar()
+        teclasDoGuia.clear()
+        // Fora da tela, o segundo player só gastaria memória e rede. Volta com
+        // o canal da metade ativa em tela cheia, como no Mac ao abrir o acervo.
+        sairDaMultiTela()
+        emSegundoPlano = true
+        imagemEstavelDesde = 0L
+        handler.removeCallbacks(tentarReconexao)
+        handler.removeCallbacks(sourceTimeout)
+        player.playWhenReady = false
+        playerView.player = null
+        pararRelogios()
+        handler.postDelayed(soltarPlayerParado, SOLTAR_PLAYER_MS)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (semCanais || isFinishing || !::player.isInitialized) return
+        Connect.listener = this
+        Connect.notificarMudancaDeEstado()
+        emSegundoPlano = false
+        handler.removeCallbacks(soltarPlayerParado)
+        if (jaIniciou) {
+            pararRelogios()
+            handler.postDelayed(tick, TICK_MS)
+            handler.postDelayed(vigiaDeImagem, VIGIA_MS)
+            if (guideStarted && Epg.channelsWithGuide == 0) guideStarted = false
+            if (player.playbackState != Player.STATE_IDLE || playerSolto || player.playerError != null) {
+                aguardarImagem(R.string.retomando_imagem)
+                handler.postDelayed(sourceTimeout, SOURCE_TIMEOUT_MS)
+            }
+            playerView.player = player
+            if (esperandoImagem && player.playbackState == Player.STATE_READY &&
+                !player.currentTracks.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO)) concluirImagem()
+        }
+        val mudouUpscaling = ::player.isInitialized && Upscaling.aplicar(player)
+        if (playerSolto || mudouUpscaling) {
+            playerSolto = false
+            play(current, sourceIndex)
+        } else if (::player.isInitialized) {
+            player.playWhenReady = true
+            if (player.playbackState == Player.STATE_BUFFERING && !tocouAvisado) {
+                handler.postDelayed(sourceTimeout, SOURCE_TIMEOUT_MS)
+            } else if (player.playbackState == Player.STATE_ENDED) {
+                recuperarInterrupcao("fim do stream", repetirFonte = false)
+            } else if (player.playerError != null) {
+                play(current, sourceIndex, apósFalha = true)
+            }
+        }
+        // Voltando das configurações com a permissão já ligada (nos aparelhos
+        // em que o sistema não matou o app no caminho), retoma a atualização.
+        jaIniciou = true
+    }
+
+    override fun onDestroy() {
+        if (semCanais || !::player.isInitialized) { super.onDestroy(); return }
+        handler.removeCallbacksAndMessages(null)
+        segunda?.soltar()
+        segunda = null
+        mediaSession?.release()
+        AudioInteligente.liberar(player)
+        player.release()
+        super.onDestroy()
+    }
+
+    // MARK: - Voz (Assistant / Alexa)
+
+    /**
+     * Player de fachada só para a sessão de mídia.
+     *
+     * O de verdade nunca tem "próximo item" — cada canal é uma troca de fonte,
+     * não uma playlist — então por padrão a sessão esconde os comandos de
+     * pular. Aqui eles ficam sempre disponíveis e vão direto para `play`, que
+     * é como "próximo/anterior canal" por voz chega a valer.
+     */
+    private inner class ChannelPlayer(player: Player) : ForwardingPlayer(player) {
+        override fun isCommandAvailable(command: Int) = when (command) {
+            Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+            Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> true
+            // Ao vivo não pausa — nem pelo Assistant, nem pelo controle de outro app.
+            Player.COMMAND_PLAY_PAUSE -> false
+            else -> super.isCommandAvailable(command)
+        }
+
+        override fun getAvailableCommands(): Player.Commands = super.getAvailableCommands()
+            .buildUpon()
+            .addAll(
+                Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+            .remove(Player.COMMAND_PLAY_PAUSE)
+            .build()
+
+        override fun pause() {}
+
+        override fun hasNextMediaItem() = true
+        override fun hasPreviousMediaItem() = true
+        override fun seekToNext() = play((current + 1) % ordered.size)
+        override fun seekToNextMediaItem() = play((current + 1) % ordered.size)
+        override fun seekToPrevious() = play((current - 1 + ordered.size) % ordered.size)
+        override fun seekToPreviousMediaItem() = play((current - 1 + ordered.size) % ordered.size)
+    }
+
+    /**
+     * "Abrir/tocar <canal>" por voz chega aqui, disfarçado de pedido de item
+     * de mídia — é como o Media3 traduz `playFromSearch` do Assistant e da
+     * Alexa. Como não existe playlist de verdade, o item nunca é aceito: ele
+     * só carrega o texto da busca, que vira uma troca de canal, e a lista de
+     * volta fica vazia.
+     */
+    private val sessionCallback = object : MediaSession.Callback {
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+        ): ListenableFuture<MutableList<MediaItem>> {
+            val pedido = mediaItems.firstOrNull()
+            val termo = pedido?.requestMetadata?.searchQuery
+                ?: pedido?.mediaId?.takeIf { it.isNotBlank() }
+            val índice = termo?.let { canalPorVoz(it) }
+            if (índice != null) runOnUiThread { play(índice) }
+            return Futures.immediateFuture(mutableListOf())
+        }
+    }
+
+    /// O Assistant e a Alexa nem sempre mandam só o nome: "abrir Globo",
+    /// "assistir Globo", "canal 5" chegam inteiros na busca. Só o COMEÇO da
+    /// frase é limpo — nunca a palavra toda, em qualquer lugar — porque um
+    /// nome de canal pode legitimamente conter "a", "o" ou "de" ("A&E",
+    /// "TV Cultura de Minas") e sumir junto se a limpeza fosse ampla.
+    private val PREFIXO_DE_COMANDO = Regex(
+        "^(abrir|abre|abra|tocar|toca|toque|assistir|assista|ver|veja|colocar|" +
+            "coloca|coloque|mudar|muda|mude|ir|trocar|troca|troque|ligar|liga|" +
+            "ligue)\\s+")
+    private val PREFIXO_CANAL = Regex("^canal\\s+")
+
+    /** Acha o canal cujo nome ou número mais se aproxima do que a pessoa falou. */
+    private fun canalPorVoz(consulta: String): Int? {
+        val alvo = normalizarVoz(consulta)
+        if (alvo.isBlank()) return null
+        val termo = alvo.replace(PREFIXO_DE_COMANDO, "").replace(PREFIXO_CANAL, "").trim()
+            .ifBlank { alvo }
+
+        // "5" ou "canal 5" — o mesmo número que aparece do lado do nome na
+        // lista, um a mais que o índice porque a lista começa em 1.
+        termo.toIntOrNull()?.let { numero ->
+            indicePorNumero(numero).takeIf { it >= 0 }?.let { return it }
+        }
+
+        ordered.indexOfFirst { normalizarVoz(it.name) == termo }
+            .takeIf { it >= 0 }?.let { return it }
+        ordered.indexOfFirst { normalizarVoz(it.name).startsWith(termo) }
+            .takeIf { it >= 0 }?.let { return it }
+        ordered.indexOfFirst { normalizarVoz(it.name).contains(termo) }
+            .takeIf { it >= 0 }?.let { return it }
+        // "abra a Globo" sem o prefixo tirado por inteiro ainda acha, porque
+        // desta vez é a consulta que precisa conter o nome, não o contrário.
+        return ordered.indexOfFirst { termo.contains(normalizarVoz(it.name)) }.takeIf { it >= 0 }
+    }
+
+    private fun normalizarVoz(texto: String): String =
+        java.text.Normalizer.normalize(texto, java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{Mn}+"), "")
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), " ")
+            .trim()
+
+    // MARK: - Sintonia Connect (Controle Remoto e Celular)
+
+    private fun mostrarDialogoConectar() {
+        Connect.iniciar(this)
+        val ip = Connect.enderecoLocal()
+        val pin = Connect.pinAtual
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.connect_titulo)
+            .setMessage(getString(R.string.connect_ip_pin, ip, pin))
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    override fun instantes(): JSONArray {
+        val telas = JSONArray()
+        if (::player.isInitialized) {
+            Sincronia.instante(player)?.let {
+                telas.put(JSONObject().put("idx", 0).put("st", it).put("playing", player.isPlaying))
+            }
+        }
+        val tela2 = segunda
+        if (multiTela && tela2 != null) {
+            tela2.instante()?.let {
+                telas.put(JSONObject().put("idx", 1).put("st", it).put("playing", tela2.tocando))
+            }
+        }
+        return telas
+    }
+
+    override fun obterEstado(): JSONObject {
+        val root = JSONObject()
+        root.put("t", "state")
+        root.put("mode", "live")
+        root.put("playing", ::player.isInitialized && player.isPlaying)
+        root.put("multi", multiTela)
+        root.put("active", telaAtiva)
+
+        val screens = JSONArray()
+
+        // Tela 0 (Principal / Esquerda)
+        val c0 = ordered.getOrNull(current)
+        if (c0 != null) {
+            val s0Obj = JSONObject()
+            s0Obj.put("idx", 0)
+            s0Obj.put("channel", c0.name)
+            s0Obj.put("num", numeroDe(c0))
+            s0Obj.put("logo", c0.logo ?: "")
+            s0Obj.put("program", Epg.nowNext(c0.name)?.first?.title ?: "")
+            s0Obj.put("sourceIndex", sourceIndex)
+            val src0 = c0.sources.getOrNull(sourceIndex) ?: c0.sources.firstOrNull()
+            if (src0 != null) {
+                val url0 = src0.url
+                val ref0 = src0.referer
+                s0Obj.put("source", JSONObject().apply {
+                    put("url", url0)
+                    put("referer", ref0 ?: JSONObject.NULL)
+                    put("userAgent", src0.userAgent ?: JSONObject.NULL)
+                    put("keyId", src0.keyId ?: JSONObject.NULL)
+                    put("key", src0.key ?: JSONObject.NULL)
+                })
+            }
+            val liveOffset0 = if (::player.isInitialized) {
+                if (player.currentLiveOffset != androidx.media3.common.C.TIME_UNSET && player.currentLiveOffset > 0) {
+                    player.currentLiveOffset
+                } else if (!player.currentTimeline.isEmpty) {
+                    val w = androidx.media3.common.Timeline.Window()
+                    player.currentTimeline.getWindow(player.currentMediaItemIndex, w)
+                    if (w.durationMs != androidx.media3.common.C.TIME_UNSET && w.durationMs > 0) {
+                        (w.durationMs - player.currentPosition).coerceAtLeast(0L)
+                    } else {
+                        12_000L
+                    }
+                } else {
+                    12_000L
+                }
+            } else {
+                12_000L
+            }
+            s0Obj.put("liveOffset", liveOffset0)
+            screens.put(s0Obj)
+        }
+
+        // Tela 1 (Segunda Tela / Direita)
+        val c1 = segunda?.canal
+        if (multiTela && c1 != null) {
+            val s1Obj = JSONObject()
+            s1Obj.put("idx", 1)
+            s1Obj.put("channel", c1.name)
+            s1Obj.put("num", numeroDe(c1))
+            s1Obj.put("logo", c1.logo ?: "")
+            s1Obj.put("program", Epg.nowNext(c1.name)?.first?.title ?: "")
+            val f1 = segunda?.fonteAtual ?: 0
+            s1Obj.put("sourceIndex", f1)
+            val src1 = c1.sources.getOrNull(f1) ?: c1.sources.firstOrNull()
+            if (src1 != null) {
+                val url1 = src1.url
+                val ref1 = src1.referer
+                s1Obj.put("source", JSONObject().apply {
+                    put("url", url1)
+                    put("referer", ref1 ?: JSONObject.NULL)
+                    put("userAgent", src1.userAgent ?: JSONObject.NULL)
+                    put("keyId", src1.keyId ?: JSONObject.NULL)
+                    put("key", src1.key ?: JSONObject.NULL)
+                })
+            }
+            val liveOffset1 = segunda?.liveOffset ?: -1L
+            s1Obj.put("liveOffset", liveOffset1)
+            screens.put(s1Obj)
+        }
+
+        root.put("screens", screens)
+
+        // Volume atual do sistema
+        val audioMgr = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        val maxVol = audioMgr?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
+        val curVol = audioMgr?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 10
+        root.put("volume", curVol.toFloat() / maxVol.toFloat().coerceAtLeast(1f))
+        root.put("muted", curVol == 0)
+
+        return root
+    }
+
+    override fun sintonizarCanal(nome: String, metade: Int?) {
+        val idx = encontrarIndiceCanal(nome)
+        if (idx < 0) return
+        if (metade != null && multiTela && metade == 1) {
+            ativarTela(1)
+            sintonizar(idx)
+        } else {
+            if (multiTela && (metade == 0 || telaAtiva == 0)) {
+                ativarTela(0)
+            }
+            sintonizar(idx)
+        }
+        Connect.notificarMudancaDeEstado()
+    }
+
+    override fun alternarMultiTela(ligar: Boolean) {
+        if (ligar && !multiTela) entrarNaMultiTela()
+        else if (!ligar && multiTela) sairDaMultiTela()
+        Connect.notificarMudancaDeEstado()
+    }
+
+    override fun definirMetadeAtiva(metade: Int) {
+        if (multiTela) ativarTela(metade)
+        Connect.notificarMudancaDeEstado()
+    }
+
+    override fun definirTvAudio(som: String) {
+        Connect.tvAudio = som
+        if (multiTela) {
+            if (!Connect.temAudioNoCelular()) {
+                when (som) {
+                    "0" -> ativarTela(0)
+                    "1" -> ativarTela(1)
+                    "mute" -> {
+                        ajustarVolume(0f)
+                        segunda?.comSom = false
+                    }
+                }
+            } else {
+                when (som) {
+                    "0" -> { ajustarVolume(1f); segunda?.comSom = false }
+                    "1" -> { ajustarVolume(0f); segunda?.comSom = true }
+                    "mute" -> { ajustarVolume(0f); segunda?.comSom = false }
+                }
+            }
+        } else {
+            when (som) {
+                "mute" -> { ajustarVolume(0f) }
+                else -> { ajustarVolume(1f) }
+            }
+        }
+        Connect.notificarMudancaDeEstado()
+    }
+
+    override fun trocarFonte(delta: Int) {
+        val c = ordered.getOrNull(current) ?: return
+        val novasFontes = c.sources.size
+        if (novasFontes > 1) {
+            val prox = (sourceIndex + delta + novasFontes) % novasFontes
+            play(current, prox)
+        }
+        Connect.notificarMudancaDeEstado()
+    }
+
+    override fun simularTecla(keyCode: Int): Boolean {
+        val dialogo = Painel.dialogVisivel()
+        if (dialogo != null) {
+            runOnUiThread {
+                if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                    dialogo.dismiss()
+                } else {
+                    val now = SystemClock.uptimeMillis()
+                    val down = KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0)
+                    val up = KeyEvent(now, now + 10, KeyEvent.ACTION_UP, keyCode, 0)
+                    val consumiu = dialogo.dispatchKeyEvent(down)
+                    dialogo.dispatchKeyEvent(up)
+                    if (!consumiu) {
+                        val direction = when (keyCode) {
+                            KeyEvent.KEYCODE_DPAD_UP -> View.FOCUS_UP
+                            KeyEvent.KEYCODE_DPAD_DOWN -> View.FOCUS_DOWN
+                            KeyEvent.KEYCODE_DPAD_LEFT -> View.FOCUS_LEFT
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> View.FOCUS_RIGHT
+                            else -> 0
+                        }
+                        if (direction != 0) {
+                            val decor = dialogo.window?.decorView as? ViewGroup
+                            val current = dialogo.currentFocus ?: decor?.findFocus()
+                            val next = current?.focusSearch(direction) ?: decor?.let {
+                                android.view.FocusFinder.getInstance().findNextFocus(it, current, direction)
+                            }
+                            next?.requestFocus(direction)
+                        } else if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+                            dialogo.currentFocus?.performClick()
+                        }
+                    }
+                }
+            }
+            return true
+        }
+        if (semCanais) return false
+        if (!Vr.ativo && guiaAoVivo.tecla(keyCode)) return true
+        if (keyCode == KeyEvent.KEYCODE_DEL) {
+            if (numpad.visibility == View.VISIBLE) {
+                if (typed.isNotEmpty()) typed.deleteCharAt(typed.length - 1)
+                numpadValue.text = typed
+            } else if (typed.isNotEmpty()) {
+                typed.deleteCharAt(typed.length - 1)
+                if (typed.isNotEmpty()) {
+                    showStatus(getString(R.string.channel_number, typed.toString()))
+                    handler.removeCallbacks(commitTyped)
+                    handler.postDelayed(commitTyped, 1_200)
+                } else {
+                    status.visibility = View.GONE
+                    handler.removeCallbacks(commitTyped)
+                }
+            }
+            return true
+        }
+        if (keyCode == KeyEvent.KEYCODE_CLEAR) {
+            typed = StringBuilder()
+            status.visibility = View.GONE
+            handler.removeCallbacks(commitTyped)
+            if (numpad.visibility == View.VISIBLE) {
+                numpadValue.text = ""
+            }
+            return true
+        }
+        if (keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
+            val digit = keyCode - KeyEvent.KEYCODE_0
+            if (listPanel.visibility == View.VISIBLE) {
+                padDigit(digit)
+            } else {
+                typeDigit(digit)
+            }
+            return true
+        }
+        val listOpen = listPanel.visibility == View.VISIBLE
+        if (!listOpen) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> { zapear(-1); return true }
+                KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> { zapear(1); return true }
+                KeyEvent.KEYCODE_DPAD_LEFT -> { abrirGuiaAoVivo(); return true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { openGuide(); return true }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                    if (numpad.visibility == View.VISIBLE) {
+                        padCommit()
+                        return true
+                    }
+                    if (typed.isNotEmpty()) {
+                        handler.removeCallbacks(commitTyped)
+                        commitTyped.run()
+                        return true
+                    }
+                    abrirGuiaAoVivo()
+                    return true
+                }
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
+                    if (multiTela) { sairDaMultiTela(); return true }
+                }
+                KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SETTINGS -> {
+                    opcoes(); return true
+                }
+            }
+        }
+        val now = SystemClock.uptimeMillis()
+        val down = KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0)
+        val up = KeyEvent(now, now + 10, KeyEvent.ACTION_UP, keyCode, 0)
+        dispatchKeyEvent(down)
+        dispatchKeyEvent(up)
+        return true
+    }
+
+    override fun onPhoneAudioChanged(phoneAudioList: List<Connect.PhoneAudioStatus>) {
+        val ativos = phoneAudioList.filter { it.src == "0" || it.src == "1" || it.src == "both" }
+        if (ativos.isNotEmpty()) {
+            val nomes = ativos.joinToString(", ") { a ->
+                val qual = if (!multiTela) "a TV" else when (a.src) {
+                    "0" -> "Canal 1"
+                    "1" -> "Canal 2"
+                    else -> "os dois canais"
+                }
+                "${a.name} ouvindo $qual"
+            }
+            showStatus(nomes)
+            handler.removeCallbacks(esconderStatus)
+            handler.postDelayed(esconderStatus, 4000)
+        } else {
+            runOnUiThread {
+                if (multiTela) {
+                    ativarTela(telaAtiva)
+                }
+            }
+        }
+    }
+
+    override fun solicitarAprovacao(nomeDispositivo: String, aoResponder: (permitido: Boolean) -> Unit) {
+        runOnUiThread {
+            try {
+                val dialog = android.app.AlertDialog.Builder(this)
+                    .setTitle(R.string.connect_aprovar_titulo)
+                    .setMessage(getString(R.string.connect_aprovar_msg, nomeDispositivo))
+                    .setPositiveButton(R.string.connect_permitir) { _, _ -> aoResponder(true) }
+                    .setNegativeButton(R.string.connect_recusar) { _, _ -> aoResponder(false) }
+                    .setOnCancelListener { aoResponder(false) }
+                    .create()
+                dialog.show()
+                dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)?.requestFocus()
+            } catch (e: Exception) {
+                aoResponder(true)
+            }
+        }
+    }
+}
+
+/// Marca de atualização parcial: só o que está no ar mudou, não o canal.
+private val SO_O_GUIA = Any()
+
+/** Channel rows: number, logo, name and whatever is on air right now. */
+private class ChannelAdapter(
+    private val onPick: (Int) -> Unit,
+    private val onFavorite: (Int) -> Unit,
+) : RecyclerView.Adapter<ChannelAdapter.Holder>() {
+
+    private var items: List<Channel> = emptyList()
+    private var selected = 0
+    var numero: (Channel) -> Int = { 0 }
+
+    /// Id fixo por canal: reordenar (favoritar, a lista nova chegando) move as
+    /// linhas em vez de recriar todas, e o foco não se perde no meio.
+    private val ids = HashMap<String, Long>()
+
+    init { setHasStableIds(true) }
+
+    override fun getItemId(position: Int): Long =
+        ids.getOrPut(items[position].name) { ids.size.toLong() }
+
+    @android.annotation.SuppressLint("NotifyDataSetChanged")
+    fun submit(list: List<Channel>) {
+        items = list
+        notifyDataSetChanged()
+    }
+
+    /**
+     * Só o programa no ar e a barra de andamento, a cada 20 s ou quando o guia
+     * chega: antes era a linha inteira — logo, número, seção — e a rolagem da
+     * lista engasgava no TV Box de 1 GB a cada atualização.
+     */
+    fun refresh() = notifyItemRangeChanged(0, items.size, SO_O_GUIA)
+
+    override fun onBindViewHolder(holder: Holder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isNotEmpty() && payloads.all { it === SO_O_GUIA }) {
+            mostrarNoAr(holder, items[position])
+        } else {
+            onBindViewHolder(holder, position)
+        }
+    }
+
+    private fun mostrarNoAr(holder: Holder, channel: Channel) {
+        val now = System.currentTimeMillis()
+        val onAir = Epg.nowNext(channel.name, now)?.first
+        if (onAir == null) {
+            holder.programme.visibility = View.GONE
+            holder.progress.visibility = View.GONE
+        } else {
+            holder.programme.visibility = View.VISIBLE
+            holder.programme.text = onAir.title
+            holder.progress.visibility = View.VISIBLE
+            holder.progress.progress = (onAir.progress(now) * 1000).toInt()
+        }
+    }
+
+    fun select(index: Int) {
+        val previous = selected
+        selected = index
+        notifyItemChanged(previous)
+        notifyItemChanged(index)
+    }
+
+    class Holder(view: View) : RecyclerView.ViewHolder(view) {
+        val number: TextView = view.findViewById(R.id.number)
+        val logo: ImageView = view.findViewById(R.id.logo)
+        val name: TextView = view.findViewById(R.id.name)
+        val programme: TextView = view.findViewById(R.id.programme)
+        val progress: ProgressBar = view.findViewById(R.id.rowProgress)
+        val star: TextView = view.findViewById(R.id.star)
+        val secao: TextView = view.findViewById(R.id.secao)
+        /// Guardado para não pedir ao Coil a mesma imagem a cada redesenho.
+        var loaded: String? = null
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
+        val holder = Holder(
+            LayoutInflater.from(parent.context).inflate(R.layout.item_channel, parent, false))
+        // Nos óculos um toque na linha já sintoniza. Focável no modo toque, o
+        // primeiro toque só focaria — no TV Box o modo toque nunca entra.
+        if (Vr.ativo) holder.itemView.isFocusableInTouchMode = false
+        // O crescimento no foco é o que dá a sensação de resposta imediata sem
+        // custar nada: é a GPU, não uma nova medição de layout.
+        holder.itemView.setOnFocusChangeListener { view, hasFocus ->
+            val scale = if (hasFocus) 1.03f else 1f
+            view.animate().scaleX(scale).scaleY(scale).setDuration(120).start()
+        }
+        return holder
+    }
+
+    override fun onBindViewHolder(holder: Holder, position: Int) {
+        val channel = items[position]
+        holder.number.text = numero(channel).takeIf { it > 0 }?.toString().orEmpty()
+        holder.name.text = channel.name
+        holder.star.visibility =
+            if (Favorites.contains(channel.name)) View.VISIBLE else View.GONE
+        val rotulo = Categorias.rotulo(items, position)
+        holder.secao.text = rotulo.orEmpty()
+        holder.secao.visibility = if (rotulo == null) View.GONE else View.VISIBLE
+        mostrarNoAr(holder, channel)
+
+        if (holder.loaded != channel.logo) {
+            holder.loaded = channel.logo
+            if (channel.logo != null) holder.logo.load(channel.logo)
+            // Sem cancelar, o logo do canal que ocupava a linha antes chegava
+            // depois e ficava num canal sem logo nenhum.
+            else { holder.logo.dispose(); holder.logo.setImageDrawable(null) }
+        }
+
+        holder.itemView.setOnClickListener { onPick(position) }
+        holder.itemView.setOnLongClickListener { onFavorite(position); true }
+        holder.itemView.isSelected = position == selected
+    }
+
+    override fun getItemCount() = items.size
+}
+/** Mostra a dimensão realmente decodificada, não uma qualidade presumida pela URL. */
+private fun rotuloResolucao(largura: Int, altura: Int): String {
+    if (largura <= 0 || altura <= 0) return ""
+    val classe = when {
+        largura >= 3800 || altura >= 2100 -> "4K"
+        altura >= 1400 -> "${altura}p"
+        altura >= 1000 -> "Full HD"
+        altura >= 700 -> "HD"
+        else -> "${altura}p"
+    }
+    return "${largura}×${altura} · $classe"
+}
+
+internal fun proximaFonte(atual: Int, total: Int): Int =
+    if (atual + 1 < total) atual + 1 else -1
+
+internal fun proximaFonteDistinta(atual: Int, fontes: List<Source>): Int {
+    val anteriores = fontes.take(atual + 1).mapTo(mutableSetOf()) { it.url }
+    return ((atual + 1) until fontes.size).firstOrNull { fontes[it].url !in anteriores } ?: -1
+}
+
+internal fun reproducaoEstavel(desde: Long, agora: Long): Boolean =
+    desde > 0 && agora - desde >= 60_000L

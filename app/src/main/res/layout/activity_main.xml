@@ -14,6 +14,13 @@
         app:resize_mode="fit"
         app:use_controller="false" />
 
+    <include
+        android:id="@+id/carregandoImagem"
+        layout="@layout/estado_carregando"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
     <!-- Multi tela: a segunda imagem, na metade direita. Só tem player ligado
          enquanto a multi tela está aberta; as larguras saem do código. -->
     <androidx.media3.ui.PlayerView
@@ -184,8 +191,6 @@
             android:textSize="15sp" />
     </FrameLayout>
 
-    <!-- Rádio tocando: o painel cobre a tela que seria preta. -->
-    <include layout="@layout/painel_radio" />
 
     <!-- Cartão do que está no ar: canal, programa, quanto já passou. -->
     <LinearLayout
@@ -193,18 +198,18 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="@drawable/bg_bottom_scrim"
+        android:background="#D9101716"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="56dp"
-        android:paddingTop="70dp"
-        android:paddingEnd="56dp"
-        android:paddingBottom="44dp">
+        android:paddingStart="24dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="12dp">
 
         <FrameLayout
-            android:layout_width="76dp"
-            android:layout_height="76dp"
-            android:layout_marginEnd="22dp"
+            android:layout_width="62dp"
+            android:layout_height="62dp"
+            android:layout_marginEnd="16dp"
             android:background="@drawable/bg_logo">
 
             <ImageView
@@ -235,7 +240,7 @@
                     android:layout_marginEnd="14dp"
                     android:fontFamily="sans-serif-medium"
                     android:textColor="@color/accent"
-                    android:textSize="26sp" />
+                    android:textSize="20sp" />
 
                 <TextView
                     android:id="@+id/bannerChannel"
@@ -246,7 +251,7 @@
                     android:fontFamily="sans-serif-medium"
                     android:maxLines="1"
                     android:textColor="@color/text_primary"
-                    android:textSize="28sp" />
+                    android:textSize="22sp" />
 
                 <TextView
                     android:id="@+id/bannerResolution"
@@ -262,26 +267,52 @@
                     android:textColor="@color/accent"
                     android:textSize="15sp"
                     android:visibility="gone" />
+                <TextView
+                    android:id="@+id/bannerClock"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
             </LinearLayout>
-
-            <TextView
-                android:id="@+id/bannerProgramme"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textColor="@color/text_primary"
-                android:textSize="21sp" />
 
             <ProgressBar
                 android:id="@+id/bannerProgress"
                 style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="match_parent"
-                android:layout_height="6dp"
-                android:layout_marginTop="12dp"
+                android:layout_height="4dp"
+                android:layout_marginTop="6dp"
                 android:max="1000"
                 android:progressDrawable="@drawable/progress_track" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/bannerProgramme"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="10dp"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/bannerTimes"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:gravity="end"
+                    android:maxLines="1"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/bannerSource"
@@ -291,18 +322,9 @@
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:textColor="@color/text_faint"
-                android:textSize="15sp"
+                android:textSize="12sp"
                 android:visibility="gone" />
 
-            <TextView
-                android:id="@+id/bannerTimes"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textColor="@color/text_secondary"
-                android:textSize="17sp" />
         </LinearLayout>
     </LinearLayout>
 
@@ -363,6 +385,20 @@
         android:visibility="gone" />
 
 
+    <TextView
+        android:id="@+id/avisoSinal"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="20dp"
+        android:accessibilityLiveRegion="polite"
+        android:background="@drawable/bg_card"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="8dp"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
     <!-- Lista de canais: entra pela esquerda, navegada no D-pad. -->
     <LinearLayout
         android:id="@+id/listPanel"
@@ -416,27 +452,6 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="17sp" />
         </LinearLayout>
-
-        <!-- Entrada para filmes e séries: uma linha só, logo acima dos canais,
-             onde o olho já está. -->
-        <TextView
-            android:id="@+id/vodEntrada"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:layout_marginTop="8dp"
-            android:layout_marginEnd="20dp"
-            android:background="@drawable/row_focus"
-            android:drawablePadding="14dp"
-            android:focusable="true"
-            android:fontFamily="sans-serif-medium"
-            android:paddingStart="16dp"
-            android:paddingTop="14dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="14dp"
-            android:text="@string/vod"
-            android:textColor="@color/accent"
-            android:textSize="20sp" />
 
         <!-- Seções: pular direto para Esportes, Notícias... sem descer a lista. -->
         <HorizontalScrollView

@@ -1,4 +1,4 @@
-# Mantém os nomes que aparecem nas pilhas de erro enviadas ao Saimo Monitor.
+# Mantém os nomes que aparecem nas pilhas de erro enviadas ao Android.
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 # OkHttp e Coil trazem as próprias regras; estas silenciam avisos de
