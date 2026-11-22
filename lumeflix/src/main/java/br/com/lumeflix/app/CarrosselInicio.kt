@@ -39,8 +39,28 @@ internal class CarrosselInicio(
         val filas = tela.findViewById<RecyclerView>(R.id.inicioFilas)
         filas.viewTreeObserver.addOnGlobalFocusChangeListener { _, foco ->
             ultimaInteracao = android.os.SystemClock.elapsedRealtime()
-            if (foco == null) return@addOnGlobalFocusChangeListener
-            val linha = filas.findContainingViewHolder(foco)?.bindingAdapterPosition ?: 0
+            if (foco == null || foco === filas) return@addOnGlobalFocusChangeListener
+            val holder = filas.findContainingViewHolder(foco)
+            val linha = holder?.bindingAdapterPosition ?: -1
+            val params = banner.layoutParams as android.widget.LinearLayout.LayoutParams
+            val total = (banner.parent as View).height
+            if (linha <= 0 && total > 0) {
+                // Reserve room for the whole focused shelf, including its heading and focus ring.
+                val altura = if (linha == 0 && holder != null) {
+                    val areaFila = holder.itemView.measuredHeight + filas.paddingTop + filas.paddingBottom
+                    minOf(total * 3 / 4, (total - areaFila).coerceAtLeast(0))
+                } else 0
+                val peso = if (linha == 0) 0f else 3f
+                if (params.height != altura || params.weight != peso) {
+                    params.height = altura
+                    params.weight = peso
+                    banner.layoutParams = params
+                }
+                if (linha == 0) {
+                    (filas.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
+                        ?.scrollToPositionWithOffset(0, 0)
+                }
+            }
             val visivel = linha <= 0
             if (visivel != (banner.visibility == View.VISIBLE)) {
                 banner.visibility = if (visivel) View.VISIBLE else View.GONE

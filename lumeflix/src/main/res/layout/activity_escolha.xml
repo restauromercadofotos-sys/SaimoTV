@@ -29,7 +29,7 @@
         <View
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@drawable/bg_destaque_baixo" />
+            android:background="@drawable/bg_inicio_transicao" />
 
     </FrameLayout>
 
@@ -110,6 +110,7 @@
         </FrameLayout>
         <br.com.lumeflix.app.ListaSemFuga
             android:id="@+id/inicioFilas"
+            android:background="#101010"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
