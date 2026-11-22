@@ -534,13 +534,18 @@ object Detalhes {
             val cache = context.getSharedPreferences("fileiras_editoriais", Context.MODE_PRIVATE)
             val saida = mutableListOf<Pair<String, List<Vod.Achado>>>()
 
-            suspend fun incluir(nome: String, ids: List<Int>, limite: Int = 20) {
-                val titulos = mutableListOf<Vod.Achado>()
+            suspend fun selecionar(ids: List<Int>, limite: Int): List<Vod.Achado> {
+                val titulos = linkedSetOf<Vod.Achado>()
                 for (id in ids.distinct()) {
                     val titulo = Generos.titulo(id, serie) ?: continue
                     Vod.achar(context, titulo, serie)?.let(titulos::add)
                     if (titulos.size == limite) break
                 }
+                return titulos.toList()
+            }
+
+            suspend fun incluir(nome: String, ids: List<Int>, limite: Int = 20) {
+                val titulos = selecionar(ids, limite)
                 if (titulos.isNotEmpty()) saida += nome to titulos
             }
 
@@ -555,7 +560,26 @@ object Detalhes {
                     } else (0 until itens.length()).mapNotNull { itens.optJSONObject(it)?.optInt("id")?.takeIf { id -> id > 0 } }
                         .also { cache.edit().putString("$chave.data", hoje).putString(chave, it.joinToString(",")).apply() }
                 }
-                incluir(nome, ids, limite)
+                if (rota.startsWith("trending/") && ids.isNotEmpty()) {
+                    val candidatos = ids.toMutableList()
+                    var selecionados = selecionar(candidatos, limite)
+                    for (pagina in 2..5) {
+                        if (selecionados.size >= limite) break
+                        val extra = "$chave.pagina$pagina"
+                        val novos = if (cache.getString("$extra.data", "") == hoje) {
+                            cache.getString(extra, "").orEmpty().split(',').mapNotNull(String::toIntOrNull)
+                        } else {
+                            val itens = pedir("$BASE/$rota?api_key=$CHAVE&language=pt-BR&page=$pagina")
+                                ?.optJSONArray("results") ?: break
+                            (0 until itens.length()).mapNotNull { itens.optJSONObject(it)?.optInt("id")?.takeIf { id -> id > 0 } }
+                                .also { cache.edit().putString("$extra.data", hoje).putString(extra, it.joinToString(",")).apply() }
+                        }
+                        if (novos.isEmpty()) break
+                        candidatos.addAll(novos)
+                        selecionados = selecionar(candidatos, limite)
+                    }
+                    if (selecionados.isNotEmpty()) saida += nome to selecionados
+                } else incluir(nome, ids, limite)
             }
 
             consultar("Em alta hoje", "trending/$tipo/day", limite = 10)
