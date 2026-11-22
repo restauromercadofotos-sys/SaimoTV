@@ -28,10 +28,14 @@ internal class CarrosselInicio(
     private fun exibirAtual() {
         val atual = itens.getOrNull(indice) ?: return
         indicador.text = "${indice + 1} / ${itens.size}"
+        atual.alvo?.let { memoria.edit().putString(chave, it.nomeCompleto).apply() }
         mostrar(atual)
     }
 
     private var itens = emptyList<Inicio.Cartao>()
+    private val memoria = tela.getSharedPreferences("destaque_recente", 0)
+    private val chave = tela.javaClass.name + tela.intent.dataString.orEmpty() + tela.intent.getStringExtra("pagina.tipo").orEmpty()
+    private var restaurar = memoria.getString(chave, null)
     private var indice = 0
     private var ultimaInteracao = android.os.SystemClock.elapsedRealtime()
 
@@ -73,7 +77,7 @@ internal class CarrosselInicio(
                 if (banner.visibility == View.VISIBLE) exibirAtual()
                 while (true) {
                     delay(1_000)
-                    if (banner.visibility == View.VISIBLE && itens.size > 1 &&
+                    if (banner.visibility == View.VISIBLE && !banner.hasFocus() && itens.size > 1 &&
                         android.os.SystemClock.elapsedRealtime() - ultimaInteracao >= 16_000) {
                         indice = (indice + 1) % itens.size
                         exibirAtual()
@@ -89,8 +93,12 @@ internal class CarrosselInicio(
             .asSequence().flatMap { it.cartoes.asSequence() }.filter { it.alvo != null }
             .distinctBy { it.alvo }.take(5).toList()
         if (candidatos.isEmpty() || candidatos.map { it.alvo } == itens.map { it.alvo }) return
-        itens = candidatos
-        indice = 0
+        val anterior = itens.getOrNull(indice)
+        val manter = anterior?.takeIf { banner.hasFocus() }
+        itens = if (manter != null && candidatos.none { it.alvo == manter.alvo })
+            (listOf(manter) + candidatos).take(5) else candidatos
+        indice = itens.indexOfFirst { it.alvo?.nomeCompleto == (manter?.alvo?.nomeCompleto ?: restaurar ?: anterior?.alvo?.nomeCompleto) }.coerceAtLeast(0)
+        restaurar = null
         ultimaInteracao = android.os.SystemClock.elapsedRealtime()
         if (banner.visibility == View.VISIBLE) exibirAtual()
     }

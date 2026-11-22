@@ -365,24 +365,7 @@ class FichaActivity : TelaComMenu() {
     private fun mostrar(ficha: Detalhes.Ficha) {
         val nome = findViewById<TextView>(R.id.fichaTitulo)
         nome.text = ficha.titulo.ifBlank { Generos.semAno(alvo.titulo) }
-        val urlLogo = ficha.logo
-        if (urlLogo.isNullOrBlank()) {
-            nome.visibility = View.VISIBLE
-        } else {
-            val logo = findViewById<ImageView>(R.id.fichaLogoTitulo)
-            logo.contentDescription = nome.text
-            nome.visibility = View.GONE
-            logo.visibility = View.INVISIBLE
-            logo.load(urlLogo) {
-                listener(
-                    onSuccess = { _, _ -> logo.visibility = View.VISIBLE },
-                    onError = { _, _ ->
-                        logo.visibility = View.GONE
-                        nome.visibility = View.VISIBLE
-                    },
-                )
-            }
-        }
+        findViewById<ImageView>(R.id.fichaLogoTitulo).mostrarLogo(ficha, nome)
         ficha.fundo?.let { endereco ->
             findViewById<ImageView>(R.id.fichaFundo).load(endereco) {
                 crossfade(400)

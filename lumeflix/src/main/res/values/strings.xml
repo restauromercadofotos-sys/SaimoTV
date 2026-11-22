@@ -135,7 +135,7 @@
     <string name="faixa_legendas">Legendas</string>
     <!-- Player de filmes e séries. -->
     <string name="painel_dica">OK escolhe · VOLTAR fecha</string>
-    <string name="player_abrindo">Abrindo…</string>
+    <string name="player_abrindo">Preparando vídeo…</string>
     <string name="player_outro_servidor">Tentando outro servidor…</string>
     <string name="player_carregando">Carregando…</string>
     <string name="player_reconectando">Reconectando…</string>

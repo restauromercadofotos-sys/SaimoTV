@@ -191,6 +191,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     private var contagem = -1
     private var ignorarBufferAte = 0L
     private var duracaoAnterior = 0L
+    private var medindoPrimeiroQuadro = false
     private var travouDesde = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -813,6 +814,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         handler.postDelayed(prazo, PRAZO_MS)
         ignorarFalhaAte = SystemClock.elapsedRealtime() + IGNORAR_EVENTO_ANTERIOR_MS
         urlTocando = url
+        medindoPrimeiroQuadro = true
         atual.setMediaSource(fonteAtual(url))
         if (inicio > 0) atual.seekTo(inicio)
         atual.playWhenReady = !pausado && !emSegundoPlano
@@ -900,6 +902,13 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             resolucao.visibility = if (rotulo.isBlank()) View.GONE else View.VISIBLE
         }
 
+        override fun onRenderedFirstFrame() {
+            if (medindoPrimeiroQuadro && tentativaDesde > 0) {
+                medindoPrimeiroQuadro = false
+                android.util.Log.i("LumeFlix-Player", "Primeiro quadro: ${SystemClock.elapsedRealtime() - tentativaDesde} ms")
+            }
+        }
+
         override fun onPlaybackStateChanged(state: Int) {
             val p = player ?: return
             // O mesmo listener é reutilizado. Ao trocar de mídia, o ExoPlayer
@@ -907,6 +916,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             if (urlTocando == null || state != p.playbackState) return
             when (state) {
                 Player.STATE_READY -> {
+                    if (travouDesde > 0) android.util.Log.i("LumeFlix-Player", "Interrupção: ${SystemClock.elapsedRealtime() - travouDesde} ms")
                     handler.removeCallbacks(prazo)
                     esconderCarregando()
                     val agora = SystemClock.elapsedRealtime()
@@ -943,7 +953,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
                     if (agora >= ignorarBufferAte) travouDesde = agora
                     handler.removeCallbacks(prazo)
                     handler.postDelayed(prazo, PRAZO_MS)
-                    mostrarCarregando(getString(R.string.player_carregando))
+                    mostrarCarregando("Recuperando a reprodução…")
                 }
                 Player.STATE_ENDED -> {
                     // "Acabou" antes de meio minuto não é fim de filme: é
@@ -1404,9 +1414,9 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             botao(getString(R.string.player_episodios), "eps", R.drawable.ic_episodes) { painelEpisodios() }
             if (r.seguinte(atual) != null) botao(getString(R.string.player_proximo_ep), "prox", R.drawable.ic_skip_next) { irParaProximo(false) }
         }
-        botao(getString(R.string.player_audio_legenda), "faixas", R.drawable.ic_subtitles) { painelFaixas() }
         botao("Mais opções", "mais", R.drawable.ic_more) {
             val itens = buildList {
+                add(Painel.Item(getString(R.string.player_audio_legenda), icone = R.drawable.ic_subtitles) { painelFaixas() })
                 val versoes = (ep?.fontes ?: r?.filme?.fontes)?.keys.orEmpty()
                 if (versoes.size > 1) add(Painel.Item(getString(R.string.player_versao), Titulos.rotulo(versao),
                     icone = R.drawable.ic_translate) { painelVersao() })

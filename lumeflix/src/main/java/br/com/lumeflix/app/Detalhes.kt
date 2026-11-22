@@ -55,6 +55,7 @@ object Detalhes {
         val temporadas: Int? = null,
         /** A logo do título (PNG transparente), em português quando há. */
         val logo: String? = null,
+        val outrasLogos: List<String> = emptyList(),
     ) {
         val vazia: Boolean
             get() = sinopse.isBlank() && elenco.isEmpty() && generos.isEmpty() && duracao == null
@@ -64,14 +65,13 @@ object Detalhes {
      * A logo do título: a em português, senão a em inglês, senão a sem
      * língua. w300 basta para a altura em que aparece no player.
      */
-    private fun logoDe(json: org.json.JSONObject): String? {
-        val logos = json.optJSONObject("images")?.optJSONArray("logos") ?: return null
+    private fun logosDe(json: JSONObject): List<String> {
+        val logos = json.optJSONObject("images")?.optJSONArray("logos") ?: return emptyList()
         val lista = (0 until logos.length()).mapNotNull { logos.optJSONObject(it) }
-        val escolhida = listOf("pt", "en", "").firstNotNullOfOrNull { lingua ->
-            lista.firstOrNull { it.optString("iso_639_1").let { l -> l == lingua || (lingua.isEmpty() && (l.isEmpty() || l == "null")) } }
-        } ?: return null
-        return escolhida.optString("file_path").takeIf { it.isNotBlank() && it != "null" }
-            ?.let { IMAGENS + "w300" + it }
+        return listOf("pt", "en", "").flatMap { idioma ->
+            lista.filter { it.optString("iso_639_1").removeSuffix("null") == idioma }
+        }.mapNotNull { it.optString("file_path").takeIf { caminho -> caminho.startsWith("/") } }
+            .distinct().take(4).map { IMAGENS + "w500" + it }
     }
 
     data class TemporadaResumo(val temporada: Int, val totalEpisodios: Int)
@@ -168,6 +168,7 @@ object Detalhes {
             }
         }
 
+        val logos = logosDe(json)
         return Ficha(
             titulo = json.optString(if (serie) "name" else "title"),
             sinopse = json.optString("overview"),
@@ -204,7 +205,8 @@ object Detalhes {
                 }
             },
             temporadas = if (serie) json.optInt("number_of_seasons").takeIf { it > 0 } else null,
-            logo = logoDe(json),
+            logo = logos.firstOrNull(),
+            outrasLogos = logos.drop(1),
         )
     }
 

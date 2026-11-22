@@ -62,7 +62,10 @@ class Destaque(
         logoTitulo.visibility = View.GONE
         val alvo = cartao.alvo
         titulo.visibility = View.VISIBLE
-        trocarFundo(cartao.capaLarga ?: cartao.capa.takeIf { it.isNotBlank() })
+        val prefs = tela.getSharedPreferences("arte_destaque", 0)
+        val anterior = if (alvo != null && prefs.getString("titulo", null) == alvo.nomeCompleto)
+            prefs.getString("fundo", null) else null
+        trocarFundo(anterior ?: cartao.capaLarga ?: cartao.capa.takeIf { it.isNotBlank() })
         titulo.text = if (alvo != null) Generos.semAno(alvo.titulo) else cartao.titulo
         meta.text = cartao.meta
             ?: cartao.subtitulo?.let { tela.getString(R.string.inicio_canal_agora, it) }
@@ -86,25 +89,7 @@ class Destaque(
                 return@launch
             }
             titulo.text = ficha.titulo.ifBlank { Generos.semAno(alvo.titulo) }
-            val urlLogo = ficha.logo
-            if (urlLogo.isNullOrBlank()) {
-                titulo.visibility = View.VISIBLE
-            } else {
-                logoTitulo.contentDescription = titulo.text
-                logoTitulo.visibility = View.GONE
-                logoTitulo.load(urlLogo) {
-                    listener(
-                        onSuccess = { _, _ ->
-                            logoTitulo.visibility = View.VISIBLE
-                            titulo.visibility = View.GONE
-                        },
-                        onError = { _, _ ->
-                            logoTitulo.visibility = View.GONE
-                            titulo.visibility = View.VISIBLE
-                        },
-                    )
-                }
-            }
+            logoTitulo.mostrarLogo(ficha, titulo)
             val linha = listOfNotNull(
                 ficha.nota.takeIf { it > 0 }?.let { "%.1f".format(it) },
                 ficha.ano.takeIf { it.isNotBlank() },
@@ -112,10 +97,11 @@ class Destaque(
                 ficha.generos.take(3).joinToString(", ").takeIf { it.isNotBlank() },
             ).joinToString("  ·  ")
             meta.text = if (ficha.nota > 0) Icones.emLinha(tela, R.drawable.ic_star, linha,
-                meta.textSize.toInt(), meta.currentTextColor) else linha
+                meta.textSize.toInt(), androidx.core.content.ContextCompat.getColor(tela, R.color.accent)) else linha
             sinopse.text = ficha.sinopse
             ficha.fundo?.let { trocarFundo(it) }
             ficha.fundo?.let { imagem ->
+                prefs.edit().putString("titulo", alvo.nomeCompleto).putString("fundo", imagem).apply()
                 cartao.capaLarga = imagem
                 cartao.atualizarCapaLarga?.invoke(imagem)
             }

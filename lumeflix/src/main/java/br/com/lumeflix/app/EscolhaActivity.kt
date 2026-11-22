@@ -334,7 +334,9 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         // O que é local (continuar, ao vivo, favoritos) entra antes das fichas:
         // ler as fichas (3,7 MB) leva até 2 s num TV Box lento, e a tela
         // ficava vazia esse tempo todo. As capas dos destaques chegam depois.
-        if (!Generos.prontos) {
+        val salvas = if (primeiraVez) lerFileiras() else emptyList()
+        if (salvas.isNotEmpty()) mostrarFilas(listOfNotNull(continuar(), favoritos()) + salvas)
+        if (salvas.isEmpty() && !Generos.prontos) {
             val locais = listOfNotNull(continuar(), favoritos()) + Destaques.filas(this, somenteLocal = true).filterNot { Destaques.lancamentoGenerico(it.titulo) }.map { fila ->
                 Inicio.Fila(fila.titulo, fila.itens.map { cartaoDe(it) })
             }
@@ -349,7 +351,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
             val cartoes = fila.itens.map { cartaoDe(it) }
             if (cartoes.isNotEmpty()) lista += Inicio.Fila(fila.titulo, cartoes)
         }
-        mostrarFilas(lista)
+        if (salvas.isEmpty()) mostrarFilas(lista)
         Generos.carregar(this)
         val generosLocais = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             val entradas = Vod.entradas(this@EscolhaActivity)
@@ -361,7 +363,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
             }
         }
         lista.addAll(generosLocais)
-        if (generosLocais.isNotEmpty()) mostrarFilas(lista)
+        if (salvas.isEmpty() && generosLocais.isNotEmpty()) mostrarFilas(lista)
         val grupos = linkedMapOf<String, MutableList<Vod.Achado>>()
         for (serie in listOf(false, true)) {
             for ((nome, titulos) in Detalhes.fileirasEditoriais(this, serie)) {
@@ -375,8 +377,41 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
                     Generos.capa(a.nomeCompleto, a.serie).orEmpty()))
             })
         }
-        if (topo.isNotEmpty()) mostrarFilas(topo + lista.filterNot { it.titulo in grupos })
+        val completas = topo + lista.filterNot { it.titulo in grupos }
+        if (completas.isNotEmpty()) {
+            mostrarFilas(completas)
+            if (topo.isNotEmpty()) guardarFileiras(Inicio.organizarCatalogo(completas, getString(R.string.vod_continuar)))
+        }
     }
+
+    private val cacheInicio by lazy { getSharedPreferences("inicio_recente", MODE_PRIVATE) }
+
+    private fun guardarFileiras(filas: List<Inicio.Fila>) {
+        val dados = org.json.JSONArray()
+        for (fila in filas.filterNot { it.titulo in setOf(getString(R.string.vod_continuar), getString(R.string.vod_favoritos)) }.take(5)) {
+            val itens = org.json.JSONArray()
+            for (c in fila.cartoes.take(12)) {
+                val a = c.alvo ?: continue
+                val tipo = when (a.colecao) { "animes" -> "a"; "doramas" -> "d"; else -> if (a.serie) "s" else "f" }
+                itens.put(org.json.JSONArray(listOf(a.titulo, tipo, a.letra, a.ano, c.capa, c.trailer.orEmpty(), c.capaLarga.orEmpty())))
+            }
+            if (itens.length() > 0) dados.put(org.json.JSONArray().put(fila.titulo).put(itens))
+        }
+        if (dados.length() > 0) cacheInicio.edit().putString("filas", dados.toString()).apply()
+    }
+
+    private fun lerFileiras(): List<Inicio.Fila> = runCatching {
+        val dados = org.json.JSONArray(cacheInicio.getString("filas", "[]"))
+        (0 until dados.length()).map { i ->
+            val fila = dados.getJSONArray(i)
+            val itens = fila.getJSONArray(1)
+            Inicio.Fila(fila.getString(0), (0 until itens.length()).map { j ->
+                val c = itens.getJSONArray(j)
+                cartaoDe(Destaques.Item(c.getString(0), c.getString(1).single(), c.getString(2),
+                    c.getString(3), c.getString(4), c.getString(5))).apply { capaLarga = c.optString(6).ifBlank { null } }
+            })
+        }
+    }.getOrDefault(emptyList())
 
     private fun mostrarFilas(filasRecebidas: List<Inicio.Fila>) {
         val lista = Inicio.organizarCatalogo(filasRecebidas, getString(R.string.vod_continuar))

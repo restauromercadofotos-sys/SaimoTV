@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
-        <shape android:shape="rectangle"><solid android:color="@color/accent" /><stroke android:width="2dp" android:color="#F2F2F2" /><corners android:radius="8dp" /></shape>
+        <shape android:shape="rectangle"><solid android:color="#F2F2F2" /><stroke android:width="2dp" android:color="@color/accent" /><corners android:radius="8dp" /></shape>
     </item>
     <item>
         <shape android:shape="rectangle"><solid android:color="#EE262626" /><corners android:radius="8dp" /></shape>

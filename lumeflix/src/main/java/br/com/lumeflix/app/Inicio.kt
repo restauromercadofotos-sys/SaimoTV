@@ -156,6 +156,15 @@ object Inicio {
     ) : RecyclerView.Adapter<Adapter.Holder>() {
 
         private var filas: List<Fila> = emptyList()
+        private var listaExibida: RecyclerView? = null
+
+        override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
+            listaExibida = recyclerView
+        }
+
+        override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
+            listaExibida = null
+        }
         private val depositoCapas = RecyclerView.RecycledViewPool()
         private val depositoLargos = RecyclerView.RecycledViewPool()
         private val depositoRanking = RecyclerView.RecycledViewPool()
@@ -173,23 +182,24 @@ object Inicio {
          * guia chegavam segundos depois da tela abrir.
          */
         fun trocar(novas: List<Fila>) {
+            val vertical = listaExibida
+            val linha = vertical?.findFocus()?.let { vertical.findContainingViewHolder(it) }
+            val visivel = linha?.bindingAdapterPosition?.let(filas::getOrNull)
+            val offset = linha?.itemView?.top?.minus(vertical.paddingTop)
             val velhas = filas
             filas = novas
             if (velhas.isEmpty()) { notifyDataSetChanged(); return }
-            val comum = minOf(velhas.size, novas.size)
-            for (i in 0 until comum) {
-                val a = velhas[i]; val b = novas[i]
-                if (a === b) continue
-                val igual = a.titulo == b.titulo && a.tipo == b.tipo && a.comFichas == b.comFichas &&
-                    a.cartoes.size == b.cartoes.size &&
-                    a.cartoes.indices.all { a.cartoes[it].titulo == b.cartoes[it].titulo &&
-                        a.cartoes[it].subtitulo == b.cartoes[it].subtitulo &&
-                        a.cartoes[it].selo == b.cartoes[it].selo &&
-                        a.cartoes[it].progresso == b.cartoes[it].progresso }
-                if (!igual) notifyItemChanged(i)
+            androidx.recyclerview.widget.DiffUtil.calculateDiff(object : androidx.recyclerview.widget.DiffUtil.Callback() {
+                override fun getOldListSize() = velhas.size
+                override fun getNewListSize() = novas.size
+                override fun areItemsTheSame(old: Int, new: Int) =
+                    velhas[old].titulo == novas[new].titulo && velhas[old].tipo == novas[new].tipo
+                override fun areContentsTheSame(old: Int, new: Int) = velhas[old] === novas[new]
+            }).dispatchUpdatesTo(this)
+            if (visivel != null && offset != null) {
+                val pos = novas.indexOfFirst { it.titulo == visivel.titulo && it.tipo == visivel.tipo }
+                if (pos >= 0) (vertical.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(pos, offset)
             }
-            if (novas.size > velhas.size) notifyItemRangeInserted(velhas.size, novas.size - velhas.size)
-            else if (novas.size < velhas.size) notifyItemRangeRemoved(novas.size, velhas.size - novas.size)
         }
 
         inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
@@ -207,7 +217,7 @@ object Inicio {
                 LayoutInflater.from(parent.context).inflate(R.layout.item_fila, parent, false))
             holder.capas.layoutManager =
                 LinearLayoutManager(parent.context, LinearLayoutManager.HORIZONTAL, false).apply {
-                    initialPrefetchItemCount = 6
+                    initialPrefetchItemCount = 2
                 }
             holder.capas.setRecycledViewPool(when (viewType) {
                 Tipo.LARGO.ordinal -> depositoLargos
@@ -223,6 +233,11 @@ object Inicio {
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val fila = filas[position]
+            val anterior = holder.capas.adapter as? Capas
+            if (holder.titulo.text == fila.titulo && anterior != null) {
+                anterior.atualizar(fila.cartoes)
+                return
+            }
             holder.titulo.text = fila.titulo
             holder.capas.adapter = Capas(fila.cartoes, tipoVisual(position), escopo, capaDe, aoFocar)
             holder.capas.scrollToPosition(posicoes[fila.titulo] ?: 0)
@@ -240,12 +255,25 @@ object Inicio {
 
     /** As capas de uma fileira. */
     private class Capas(
-        private val cartoes: List<Cartao>,
+        private var cartoes: List<Cartao>,
         private val tipo: Tipo,
         private val escopo: kotlinx.coroutines.CoroutineScope?,
         private val capaDe: (suspend (String, Boolean) -> String?)?,
         private val aoFocar: ((Cartao) -> Unit)?,
     ) : RecyclerView.Adapter<Capas.Holder>() {
+
+        fun atualizar(novos: List<Cartao>) {
+            val antigos = cartoes
+            if (antigos === novos) return
+            cartoes = novos
+            androidx.recyclerview.widget.DiffUtil.calculateDiff(object : androidx.recyclerview.widget.DiffUtil.Callback() {
+                override fun getOldListSize() = antigos.size
+                override fun getNewListSize() = novos.size
+                override fun areItemsTheSame(old: Int, new: Int) =
+                    antigos[old].alvo == novos[new].alvo && antigos[old].titulo == novos[new].titulo
+                override fun areContentsTheSame(old: Int, new: Int) = antigos[old] === novos[new]
+            }, false).dispatchUpdatesTo(this)
+        }
 
         class Holder(view: View) : RecyclerView.ViewHolder(view) {
             val imagem: ImageView = view.findViewById(R.id.capaImagem)
