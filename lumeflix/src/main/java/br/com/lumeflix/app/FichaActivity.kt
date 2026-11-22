@@ -164,10 +164,10 @@ class FichaActivity : TelaComMenu() {
             }
         }
 
-        favoritar.nextFocusRightId = R.id.fichaFavoritar
+        favoritar.nextFocusRightId = R.id.fichaLerSinopse
         assistir.nextFocusLeftId = R.id.fichaAssistir
         // Descer dos botões cai nos episódios, quando houver; senão no elenco.
-        for (id in listOf(R.id.fichaAssistir, R.id.fichaVersao, R.id.fichaFavoritar)) {
+        for (id in listOf(R.id.fichaAssistir, R.id.fichaVersao, R.id.fichaFavoritar, R.id.fichaLerSinopse)) {
             findViewById<View>(id).nextFocusDownId = View.NO_ID
         }
 
@@ -256,7 +256,7 @@ class FichaActivity : TelaComMenu() {
                 if (t == atual) {
                     // Descer dos botões cai na temporada em que a pessoa está,
                     // não na que calhar de estar embaixo do botão.
-                    for (b in listOf(R.id.fichaAssistir, R.id.fichaVersao, R.id.fichaFavoritar)) {
+                    for (b in listOf(R.id.fichaAssistir, R.id.fichaVersao, R.id.fichaFavoritar, R.id.fichaLerSinopse)) {
                         this@FichaActivity.findViewById<View>(b).nextFocusDownId = id
                     }
                 }
@@ -416,8 +416,13 @@ class FichaActivity : TelaComMenu() {
         }
         findViewById<TextView>(R.id.fichaSinopse).text = ficha.sinopse
         if (!BuildConfig.TV_AO_VIVO) {
-            findViewById<TextView>(R.id.fichaSinopse).apply {
-                contentDescription = ficha.sinopse + ". OK para ler a sinopse completa."
+            findViewById<TextView>(R.id.fichaLerSinopse).apply {
+                val resumo = findViewById<TextView>(R.id.fichaSinopse)
+                resumo.post {
+                    val layout = resumo.layout
+                    visibility = if (layout != null && layout.lineCount > 0 &&
+                        layout.getEllipsisCount(layout.lineCount - 1) > 0) View.VISIBLE else View.GONE
+                }
                 setOnClickListener {
                     android.app.AlertDialog.Builder(this@FichaActivity)
                         .setTitle(ficha.titulo).setMessage(ficha.sinopse)
