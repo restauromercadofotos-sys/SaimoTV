@@ -14,7 +14,7 @@ class InicioNavegacaoTest {
 
     @Test fun `continuar fica em segundo no cache e apos os destaques chegarem`() {
         assertEquals(listOf("Em alta", continuar, "Animes"), organizar(continuar, "Em alta", "Animes"))
-        assertEquals(listOf("Em alta hoje", continuar, "Novas séries", "Animes"),
+        assertEquals(listOf("Novas séries", continuar, "Em alta hoje", "Animes"),
             organizar("Em alta hoje", "Novas séries", continuar, "Em alta", "Séries em alta",
                 "Séries novas de 2026", "Animes", "ANIMES", continuar))
     }

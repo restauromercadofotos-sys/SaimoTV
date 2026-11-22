@@ -1,5 +1,5 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="182dp"
+    android:layout_width="161dp"
     android:layout_height="wrap_content"
     android:layout_margin="6dp"
     android:background="@drawable/row_focus"
@@ -10,7 +10,7 @@
     <TextView android:id="@+id/capaRanking" android:layout_width="wrap_content"
         android:layout_height="wrap_content" android:layout_gravity="start|bottom"
         android:fontFamily="sans-serif-condensed" android:textStyle="bold" android:includeFontPadding="false"
-        android:textSize="88dp" android:textColor="#888888" android:importantForAccessibility="no" />
+        android:textSize="108dp" android:textColor="#888888" android:importantForAccessibility="no" />
 
     <FrameLayout
         android:layout_width="126dp"

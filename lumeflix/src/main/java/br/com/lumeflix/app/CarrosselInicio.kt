@@ -45,7 +45,7 @@ internal class CarrosselInicio(
             if (visivel != (banner.visibility == View.VISIBLE)) {
                 banner.visibility = if (visivel) View.VISIBLE else View.GONE
                 if (visivel) exibirAtual() else painel.suspender()
-            } else if (visivel) painel.aguardarPrevia()
+            }
         }
         tela.lifecycleScope.launch {
             tela.repeatOnLifecycle(Lifecycle.State.RESUMED) {

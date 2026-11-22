@@ -5,14 +5,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.view.View
 import android.view.ViewGroup
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.LifecycleOwner
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import coil3.load
 import coil3.dispose
 import kotlinx.coroutines.CoroutineScope
@@ -50,35 +43,10 @@ class Destaque(
         (titulo.parent as? android.widget.LinearLayout)?.let { it.addView(imagem, it.indexOfChild(titulo)) }
     }
     private var trabalho: Job? = null
-    private var trailerJob: Job? = null
-    private var trailerPlayer: ExoPlayer? = null
-    /// Logo acima da imagem e abaixo dos degradês do grupo, que continuam
-    /// deixando o texto legível por cima do vídeo.
-    private val trailerView: PlayerView? = (fundo.parent as? ViewGroup)?.let { grupo ->
-        (tela.layoutInflater.inflate(R.layout.trailer_destaque, grupo, false) as PlayerView).also {
-            grupo.addView(it, grupo.indexOfChild(fundo) + 1)
-        }
-    }
-    /// O trailer só conta como "tocou" depois do primeiro quadro na tela.
-    private var trailerMostrou = false
-
-    init {
-        // Tela que sai da frente (abriu a ficha, o player, foi para o
-        // sistema) não deixa vídeo decodificando nem contagem correndo.
-        (tela as? LifecycleOwner)?.lifecycle?.addObserver(LifecycleEventObserver { _, evento ->
-            if (evento == Lifecycle.Event.ON_PAUSE || evento == Lifecycle.Event.ON_DESTROY) {
-                trailerJob?.cancel()
-                pararTrailer()
-            }
-        })
-    }
     private var fundoAtual: String? = null
 
     fun padrao(tituloPadrao: String, metaPadrao: String) {
-        cartaoAtual = null
         trabalho?.cancel()
-        trailerJob?.cancel()
-        pararTrailer()
         logoTitulo.dispose()
         logoTitulo.visibility = View.GONE
         titulo.visibility = View.VISIBLE
@@ -90,10 +58,6 @@ class Destaque(
 
     fun mostrar(cartao: Inicio.Cartao) {
         trabalho?.cancel()
-        trailerJob?.cancel()
-        pararTrailer()
-        cartaoAtual = cartao
-        aguardarPrevia()
         logoTitulo.dispose()
         logoTitulo.visibility = View.GONE
         val alvo = cartao.alvo
@@ -158,86 +122,7 @@ class Destaque(
         }
     }
 
-    private var cartaoAtual: Inicio.Cartao? = null
-
-    fun aguardarPrevia() {
-        trailerJob?.cancel()
-        pararTrailer()
-        val cartao = cartaoAtual ?: return
-        val trailer = cartao.trailer?.takeIf { TRAILER_DIRETO.matches(it) }
-        if (cartao.alvo != null) {
-            trailerJob = escopo.launch(semDerrubar) {
-                delay(5_000)
-                val vida = (tela as LifecycleOwner).lifecycle
-                if (!vida.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@launch
-                val url = trailer ?: trechoDoCatalogo(cartao.alvo) ?: return@launch
-                if (vida.currentState.isAtLeast(Lifecycle.State.RESUMED)) iniciarTrailer(url)
-            }
-        }
-    }
-
-    private suspend fun trechoDoCatalogo(alvo: Alvo): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val item = Vod.Achado(alvo.titulo, alvo.serie, alvo.letra, alvo.ano)
-        if (!alvo.serie) {
-            val filme = Vod.filmes(tela, alvo.letra).firstOrNull { it.titulo == alvo.titulo }
-            return@withContext filme?.let { Titulos.ordem(it.fontes, Preferencias.versao).firstOrNull()?.url }
-        }
-        val episodios = if (alvo.colecao.isNotEmpty()) {
-            Vod.colecao(tela, alvo.colecao).firstOrNull { it.titulo == alvo.titulo }?.episodios
-        } else {
-            Vod.series(tela, alvo.letra).firstOrNull { it.titulo == item.titulo &&
-                (item.ano.isBlank() || it.ano == item.ano) }?.let { Vod.episodios(tela, alvo.letra, it) }
-        }
-        episodios?.firstOrNull { it.temporada == 1 && it.numero == 1 }?.urls?.firstOrNull()
-    }
-
-    fun suspender() {
-        cartaoAtual = null
-        trabalho?.cancel()
-        trailerJob?.cancel()
-        pararTrailer()
-    }
-
-    private fun iniciarTrailer(url: String) {
-        val view = trailerView ?: return
-        val carga = androidx.media3.exoplayer.DefaultLoadControl.Builder()
-            .setBufferDurationsMs(1_000, 3_000, 600, 1_000).setTargetBufferBytes(4 * 1024 * 1024).build()
-        val p = ExoPlayer.Builder(tela).setLoadControl(carga).build()
-        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setMaxVideoSize(1280, 720)
-            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_AUDIO, true).build()
-        trailerPlayer = p
-        trailerMostrou = false
-        view.alpha = 0f
-        view.player = p
-        view.visibility = View.VISIBLE
-        p.addListener(object : Player.Listener {
-            override fun onRenderedFirstFrame() {
-                trailerMostrou = true
-                view.animate().alpha(1f).setDuration(400).start()
-                // Título sem imagem larga deixa o grupo apagado; com trailer ele aparece.
-                (fundo.parent as? View)?.takeIf { it.id == R.id.inicioFundoGrupo }
-                    ?.animate()?.alpha(1f)?.setDuration(300)?.start()
-            }
-            // Endereço fora do ar ou recusado: volta a imagem, e nada abre sozinho.
-            override fun onPlayerError(error: PlaybackException) { view.post { if (trailerPlayer === p) pararTrailer() } }
-        })
-        p.setMediaSource(Playback.mediaSource(tela, Source(url)))
-        p.repeatMode = ExoPlayer.REPEAT_MODE_ONE
-        p.volume = 0f
-        p.prepare()
-        p.play()
-        trailerJob = escopo.launch { delay(11_000); if (trailerPlayer === p) pararTrailer() }
-    }
-    private fun pararTrailer() {
-        trailerMostrou = false
-        if (trailerPlayer == null) return
-        trailerView?.player = null
-        trailerView?.animate()?.cancel()
-        trailerView?.alpha = 0f
-        trailerView?.visibility = View.GONE
-        trailerPlayer?.release()
-        trailerPlayer = null
-    }
+    fun suspender() { trabalho?.cancel() }
 
     private fun trocarFundo(endereco: String?) {
         if (endereco == fundoAtual) return
@@ -254,8 +139,4 @@ class Destaque(
         }
     }
 
-    private companion object {
-        /// Só vídeo direto: página do YouTube e afins não tocam no player.
-        val TRAILER_DIRETO = Regex("^https?://.*\\.(mp4|m3u8)(\\?.*)?$", RegexOption.IGNORE_CASE)
-    }
 }

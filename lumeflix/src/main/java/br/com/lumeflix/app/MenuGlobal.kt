@@ -286,7 +286,8 @@ abstract class TelaComMenu : AppCompatActivity() {
         val barra = if (BuildConfig.TV_AO_VIVO) null
                     else MenuGlobal.criar(this, aba, { aoFocarMenu() }, aoMenuInicio)
         barraMenu = barra
-        barra?.let(raiz::addView)
+        val sobreCapa = this is EscolhaActivity || this is PaginaActivity
+        if (!sobreCapa) barra?.let(raiz::addView)
         // O conteúdo e, por cima, o estado vazio (escondido até alguém pedir).
         val moldura = android.widget.FrameLayout(this)
         val conteudo = layoutInflater.inflate(layoutResID, moldura, false)
@@ -294,6 +295,20 @@ abstract class TelaComMenu : AppCompatActivity() {
         conteudoView = conteudo
         val vazio = layoutInflater.inflate(R.layout.estado_vazio, moldura, false)
         moldura.addView(vazio)
+        if (sobreCapa && barra != null) {
+            moldura.addView(barra, android.widget.FrameLayout.LayoutParams(-1, -2))
+            barra.findViewById<View>(R.id.menuGlobalAbas).background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xDC101010.toInt())
+                cornerRadius = resources.displayMetrics.density * 24
+            }
+            val banner = conteudo.findViewById<View>(R.id.inicioBanner)
+            val lista = conteudo.findViewById<View>(R.id.inicioFilas)
+            val topoOriginal = lista.paddingTop
+            lista.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                val topo = topoOriginal + if (banner.visibility == View.GONE) barra.height else 0
+                if (lista.paddingTop != topo) lista.setPadding(lista.paddingLeft, topo, lista.paddingRight, lista.paddingBottom)
+            }
+        }
         vazioView = vazio
         vazio.findViewById<TextView>(R.id.vazioBotao).apply {
             Icones.inicio(this, R.drawable.ic_link)

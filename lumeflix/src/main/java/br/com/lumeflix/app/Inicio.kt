@@ -136,7 +136,13 @@ object Inicio {
                 resultado[i] = fila.copy(tipo = Tipo.RANKING, cartoes = fila.cartoes.take(10).mapIndexed { pos, c -> c.copy(ranking = pos + 1) })
             }
         }
-        if (continuar != null) resultado.add(minOf(1, resultado.size), continuar)
+        if (continuar != null) {
+            val rankings = resultado.filter { it.tipo == Tipo.RANKING }
+            resultado.removeAll { it.tipo == Tipo.RANKING }
+            val pos = minOf(1, resultado.size)
+            resultado.add(pos, continuar)
+            resultado.addAll(pos + 1, rankings)
+        }
         return resultado
     }
 

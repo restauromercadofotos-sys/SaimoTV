@@ -33,8 +33,8 @@ android {
         buildConfigField("boolean","TV_AO_VIVO","false")
         buildConfigField("String","LINK_SCHEME","\"lumeflix\"")
         manifestPlaceholders["linkScheme"] = "lumeflix"
-        versionCode = 30304
-        versionName = "3.3.4"
+        versionCode = 30400
+        versionName = "3.4.0"
     }
 
     signingConfigs {

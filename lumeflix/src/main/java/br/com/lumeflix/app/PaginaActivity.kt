@@ -102,7 +102,7 @@ open class PaginaActivity : TelaComMenu() {
         })
         findViewById<TextView>(R.id.paginaNome).apply {
             text = nome
-            visibility = android.view.View.VISIBLE
+            visibility = android.view.View.GONE
         }
         destaque.padrao(nome, getString(R.string.vod_carregando))
         montagem?.cancel()
