@@ -32,6 +32,16 @@ class InicioNavegacaoTest {
         assertEquals(cartoes.take(10).map { it.titulo }, ranking.map { it.titulo })
     }
 
+    @Test fun `seis filmes recebem mais quatro distintos sem misturar series`() {
+        fun cartao(id: Int, serie: Boolean = false) = Inicio.Cartao("Título $id", "", "",
+            alvo = Alvo("Título $id", serie, "", tmdbId = id)) {}
+        val diaria = Inicio.Fila("Top 10 filmes em alta hoje", (1..6).map { cartao(it) }, comFichas = false)
+        val local = Inicio.Fila("Em alta", listOf(cartao(1), cartao(99, true)) + (7..11).map { cartao(it) }, comFichas = false)
+        val ranking = Inicio.organizarCatalogo(listOf(diaria, local), continuar).single().cartoes
+        assertEquals((1..10).toList(), ranking.map { it.alvo?.tmdbId })
+        assertEquals((1..10).toList(), ranking.map { it.ranking })
+    }
+
     @Test fun `mantem a coluna ao subir ou descer`() {
         assertEquals(3, Inicio.indiceNaFilaVertical(indiceAtual = 3, totalDestino = 8))
     }

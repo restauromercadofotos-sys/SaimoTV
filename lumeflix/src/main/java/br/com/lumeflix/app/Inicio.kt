@@ -133,7 +133,19 @@ object Inicio {
         for (i in resultado.indices) {
             val fila = resultado[i]
             if (fila.titulo.startsWith("Top 10") || fila.titulo == "Em alta hoje") {
-                resultado[i] = fila.copy(tipo = Tipo.RANKING, cartoes = fila.cartoes.take(10).mapIndexed { pos, c -> c.copy(ranking = pos + 1) })
+                val serie = fila.cartoes.first().alvo?.serie
+                val reservas = disponiveis.asSequence()
+                    .filter { Vod.normalizar(it.titulo) in setOf("em alta", "filmes em alta", "series em alta") }
+                    .flatMap { it.cartoes.asSequence() }
+                    .filter { serie != null && it.alvo?.serie == serie }
+                val classificados = (fila.cartoes.asSequence() + reservas)
+                    .distinctBy { c ->
+                        val a = c.alvo
+                        val id = a?.tmdbId?.takeIf { it > 0 } ?: a?.let { Generos.id(it.titulo, it.serie) }
+                        if (id != null) "id:$id" else Vod.normalizar(a?.nomeCompleto ?: c.titulo)
+                    }
+                    .take(10).mapIndexed { pos, c -> c.copy(ranking = pos + 1) }.toList()
+                resultado[i] = fila.copy(tipo = Tipo.RANKING, cartoes = classificados)
             }
         }
         if (continuar != null) {
