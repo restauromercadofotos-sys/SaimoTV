@@ -86,6 +86,7 @@ object MenuGlobal {
         for ((aba, texto, icone) in itens.filter { Conteudo.permiteAba(it.first) }) {
             abas.addView(TextView(tela).apply {
                 text = tela.getString(texto)
+                contentDescription = text
                 tag = aba
                 textSize = if (BuildConfig.TV_AO_VIVO) 15f else 14f
                 maxLines = 1
@@ -326,20 +327,61 @@ abstract class TelaComMenu : AppCompatActivity() {
             val grupo = barra as LinearLayout
             val marca = grupo.getChildAt(1)
             val inicio = lista.paddingLeft
-            val margem = (110 * resources.displayMetrics.density).toInt()
-            lista.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val fundoTopo = abas.background
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d + 0.5f).toInt()
+            var estado: Pair<Boolean, View?>? = null
+            fun atualizarMenu() {
                 val lateral = banner.visibility == View.GONE
-                if (lateral != (abas.orientation == LinearLayout.VERTICAL)) {
-                    abas.orientation = if (lateral) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-                    marca.visibility = if (lateral) View.GONE else View.VISIBLE
-                    val d = resources.displayMetrics.density
-                    grupo.setPadding(((if (lateral) 6 else 40) * d).toInt(), (18*d).toInt(),
-                        ((if (lateral) 4 else 40) * d).toInt(), (4*d).toInt())
-                    grupo.layoutParams = android.widget.FrameLayout.LayoutParams(
-                        if (lateral) margem else -1, -2, if (lateral) Gravity.START or Gravity.CENTER_VERTICAL else Gravity.TOP)
-                    lista.setPadding(inicio + if (lateral) margem else 0, lista.paddingTop, lista.paddingRight, lista.paddingBottom)
+                val foco = if (lateral) abas.findFocus() else null
+                val novo = lateral to foco
+                if (estado == novo) return
+                estado = novo
+                val expandido = foco != null
+                abas.orientation = if (lateral) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+                abas.background = if (lateral) null else fundoTopo
+                marca.visibility = if (lateral) View.GONE else View.VISIBLE
+                grupo.background = if (expandido) android.graphics.drawable.GradientDrawable(
+                    android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+                    intArrayOf(0xFF090909.toInt(), 0xF3090909.toInt(), 0x00090909)) else null
+                grupo.setPadding(dp(if (lateral) 8 else 40), dp(if (lateral) 0 else 18),
+                    dp(if (lateral) 0 else 40), dp(if (lateral) 0 else 4))
+                grupo.layoutParams = android.widget.FrameLayout.LayoutParams(
+                    if (expandido) dp(216) else if (lateral) dp(48) else -1,
+                    if (lateral) -1 else -2, if (lateral) Gravity.START else Gravity.TOP)
+                for (i in 0 until abas.childCount) {
+                    val item = abas.getChildAt(i) as TextView
+                    val destino = item.tag as Aba
+                    val icone = when (destino) {
+                        Aba.BUSCAR -> R.drawable.ic_search
+                        Aba.INICIO -> R.drawable.ic_home
+                        Aba.ON_DEMAND -> R.drawable.ic_movie
+                        Aba.SERIES -> R.drawable.ic_episodes
+                        Aba.FAVORITOS -> R.drawable.ic_favorite
+                        else -> R.drawable.ic_settings
+                    }
+                    item.text = item.contentDescription
+                    item.minWidth = 0
+                    item.minHeight = dp(if (lateral) 40 else 0)
+                    if (lateral) {
+                        item.background = null
+                        if (android.os.Build.VERSION.SDK_INT >= 26) item.setDefaultFocusHighlightEnabled(false)
+                        item.setTextColor(if (item.isFocused || (!expandido && item.isSelected)) -1 else 0xFFAAAAAA.toInt())
+                        item.typeface = android.graphics.Typeface.create("sans-serif", if (item.isFocused) 1 else 0)
+                        if (expandido) Icones.inicio(item, icone, 1.4f) else Icones.so(item, icone)
+                        item.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                    } else {
+                        item.typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
+                        item.setTextColor(ContextCompat.getColorStateList(this, R.color.texto_botao_ficha))
+                        item.setBackgroundResource(R.drawable.aba_menu)
+                        if (destino == Aba.BUSCAR || destino == Aba.AJUSTES) Icones.so(item, icone)
+                        else Icones.inicio(item, 0)
+                    }
                 }
+                lista.setPadding(inicio + if (lateral) dp(48) else 0, lista.paddingTop, lista.paddingRight, lista.paddingBottom)
             }
+            lista.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> atualizarMenu() }
+            grupo.viewTreeObserver.addOnGlobalFocusChangeListener { _, _ -> atualizarMenu() }
         }
         vazioView = vazio
         vazio.findViewById<TextView>(R.id.vazioBotao).apply {
