@@ -101,12 +101,25 @@ object Detalhes {
         val id = idConhecido?.takeIf { it > 0 } ?: Generos.id(titulo, serie)
             ?: buscarId(titulo, serie)
             ?: return@withContext null
-        val ficha = baixar(id, serie) ?: return@withContext null
+        val ficha = baixar(id, serie, marca) ?: return@withContext null
         synchronized(guardadas) { guardadas[marca] = ficha }
         ficha
         }
 
-    private fun baixar(id: Int, serie: Boolean): Ficha? {
+    private var pasta: java.io.File? = null
+
+
+    private fun arquivo(marca: String) = pasta?.let { java.io.File(it, java.util.UUID.nameUUIDFromBytes(marca.toByteArray()).toString()) }
+
+    suspend fun salva(titulo: String, serie: Boolean, id: Int?): Ficha? = withContext(Dispatchers.IO) {
+        val marca = (if (serie) "s:" else "f:") + titulo + (id?.let { "#$it" } ?: "")
+        synchronized(guardadas) { guardadas[marca] } ?: runCatching {
+            val json = JSONObject(arquivo(marca)!!.readText())
+            interpretar(json, json.getInt("id"), serie)
+        }.getOrNull()
+    }
+
+    private fun baixar(id: Int, serie: Boolean, marca: String): Ficha? {
         val tipo = if (serie) "tv" else "movie"
         val extras = if (serie) "credits,content_ratings,images" else "credits,release_dates,images"
         // Só as logos interessam das imagens, e só nas línguas que a tela usa.
@@ -114,6 +127,21 @@ object Detalhes {
             "&include_image_language=pt,en,null")
             ?: return null
 
+        arquivo(marca)?.let { destino -> runCatching {
+            val dir = destino.parentFile!!
+            dir.mkdirs()
+            val tmp = java.io.File.createTempFile("ficha", ".tmp", dir)
+            try { tmp.writeText(json.toString()); tmp.renameTo(destino) } finally { tmp.delete() }
+            var bytes = 0L
+            dir.listFiles()?.filterNot { it.name.endsWith(".tmp") }?.sortedByDescending { it.lastModified() }?.forEachIndexed { i, f ->
+                bytes += f.length()
+                if (i >= 100 || bytes > 8L * 1024 * 1024) f.delete()
+            }
+        } }
+        return interpretar(json, id, serie)
+    }
+
+    private fun interpretar(json: JSONObject, id: Int, serie: Boolean): Ficha {
         val creditos = json.optJSONObject("credits")
         val equipe = creditos?.optJSONArray("crew")
         val direcao = mutableListOf<String>()
@@ -462,6 +490,7 @@ object Detalhes {
 
     private lateinit var cliente: okhttp3.OkHttpClient
     fun iniciarCache(context: Context) {
+        pasta = java.io.File(context.cacheDir, "fichas-v1")
         cliente = Playback.client.newBuilder()
             .cache(okhttp3.Cache(java.io.File(context.cacheDir, "metadados"), 12L * 1024 * 1024))
             .addNetworkInterceptor { chain ->

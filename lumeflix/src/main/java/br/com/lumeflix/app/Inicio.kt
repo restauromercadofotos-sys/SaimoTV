@@ -454,7 +454,10 @@ object Inicio {
             if (tipo == Tipo.RANKING && cartao.capa.isNotBlank()) holder.nome.visibility = View.GONE
             holder.sub?.text = cartao.subtitulo.orEmpty()
             holder.inicial.text = cartao.inicial
-            holder.itemView.setOnClickListener { cartao.aoEscolher() }
+            holder.itemView.setOnClickListener {
+                FichaActivity.arteSelecionada = cartao.alvo?.let { it to holder.imagem.drawable?.constantState }
+                try { cartao.aoEscolher() } finally { FichaActivity.arteSelecionada = null }
+            }
 
             if (tipo == Tipo.SECAO) { secao(holder, cartao); return }
             if (tipo == Tipo.EVENTO) { evento(holder, cartao); return }

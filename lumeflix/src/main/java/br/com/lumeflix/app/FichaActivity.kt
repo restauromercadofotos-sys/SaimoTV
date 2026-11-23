@@ -18,6 +18,7 @@ import androidx.recyclerview.widget.RecyclerView
 import coil3.dispose
 import coil3.load
 import coil3.transform.CircleCropTransformation
+import coil3.request.placeholder
 import coil3.request.crossfade
 import coil3.request.transformations
 import kotlinx.coroutines.launch
@@ -216,7 +217,7 @@ class FichaActivity : TelaComMenu() {
                     setOnClickListener { escolherVersao(versoes) }
                 }
             }
-            carregarExtras(r)
+            carregarExtras(r.tmdbId)
         }
     }
 
@@ -306,9 +307,12 @@ class FichaActivity : TelaComMenu() {
     }
 
     /** "Mais como este": vem do TMDB depois que a tela já está de pé. */
-    private fun carregarExtras(r: Titulos.Resolvido) {
+    private var idExtras = 0
+    private fun carregarExtras(id: Int) {
+        if (id <= 0 || idExtras == id) return
+        idExtras = id
         lifecycleScope.launch(semDerrubar) {
-            val lista = Detalhes.parecidos(this@FichaActivity, r.tmdbId, r.serie)
+            val lista = Detalhes.parecidos(this@FichaActivity, id, alvo.serie)
             if (lista.isEmpty() || isFinishing) return@launch
             findViewById<View>(R.id.fichaParecidosBloco).visibility = View.VISIBLE
             parecidos.trocar(lista)
@@ -324,10 +328,26 @@ class FichaActivity : TelaComMenu() {
 
     private fun carregar() {
         val carregando = findViewById<ProgressBar>(R.id.fichaCarregando)
-        findViewById<TextView>(R.id.fichaTitulo).visibility = View.INVISIBLE
+        carregando.visibility = View.GONE
+        alvo.ano.takeIf { it.isNotBlank() }?.let { selo(findViewById(R.id.fichaSelos), it) }
+        val arte = previa?.takeIf { it.first == alvo }?.second?.newDrawable(resources)
+        previa = null
+        if (arte != null && arte.intrinsicWidth >= arte.intrinsicHeight) {
+            findViewById<ImageView>(R.id.fichaFundo).setImageDrawable(arte)
+        } else {
+            val capa = findViewById<ImageView>(R.id.fichaCapa)
+            if (arte != null || Generos.capa(alvo.nomeCompleto, alvo.serie) != null) {
+                findViewById<View>(R.id.fichaCapaGrupo).visibility = View.VISIBLE
+                capa.scaleType = ImageView.ScaleType.FIT_CENTER
+                if (arte != null) capa.setImageDrawable(arte)
+            }
+        }
         lifecycleScope.launch(semDerrubar) {
             // Sem as fichas em memória, o id do título não é conhecido. O
             // arquivo já está em disco na maioria das vezes: é instantâneo.
+            val idInicial = alvo.tmdbId.takeIf { it > 0 }
+            val salva = Detalhes.salva(alvo.titulo, alvo.serie, idInicial)
+            if (salva != null) mostrar(salva)
             Generos.carregar(this@FichaActivity)
             Generos.capa(alvo.nomeCompleto, alvo.serie)?.let { mostrarCapa(it) }
             // Destaque de anime ou dorama chega sem o id: a coleção o publica,
@@ -341,6 +361,7 @@ class FichaActivity : TelaComMenu() {
                             ?.tmdbId?.toIntOrNull()
                     }.getOrNull()
                 }
+            carregarExtras(id ?: Generos.id(alvo.nomeCompleto, alvo.serie) ?: 0)
             val ficha = Detalhes.de(alvo.titulo, alvo.serie, id)
             if (alvo.serie) {
                 // O TMDB nem sempre possui still_path para cada episódio.
@@ -355,10 +376,10 @@ class FichaActivity : TelaComMenu() {
             if (isFinishing || isDestroyed) return@launch
             if (ficha == null || ficha.vazia) {
                 findViewById<TextView>(R.id.fichaTitulo).visibility = View.VISIBLE
-                findViewById<TextView>(R.id.fichaSinopse).text = getString(R.string.vod_ficha_vazia)
+                if (salva == null) findViewById<TextView>(R.id.fichaSinopse).text = getString(R.string.vod_ficha_vazia)
                 return@launch
             }
-            mostrar(ficha)
+            if (ficha != salva) mostrar(ficha)
         }
     }
 
@@ -368,7 +389,8 @@ class FichaActivity : TelaComMenu() {
         findViewById<ImageView>(R.id.fichaLogoTitulo).mostrarLogo(ficha, nome)
         ficha.fundo?.let { endereco ->
             findViewById<ImageView>(R.id.fichaFundo).load(endereco) {
-                crossfade(400)
+                placeholder(findViewById<ImageView>(R.id.fichaFundo).drawable)
+                listener(onSuccess = { _, _ -> findViewById<View>(R.id.fichaCapaGrupo).visibility = View.GONE })
             }
         }
         ficha.capa?.let { mostrarCapa(it) }
@@ -480,7 +502,12 @@ class FichaActivity : TelaComMenu() {
     }
 
     companion object {
+        internal var arteSelecionada: Pair<Alvo, android.graphics.drawable.Drawable.ConstantState?>? = null
+        private var previa: Pair<Alvo, android.graphics.drawable.Drawable.ConstantState?>? = null
         fun abrir(context: Context, alvo: Alvo) {
+            val tela = context as? android.app.Activity
+            previa = arteSelecionada?.takeIf { it.first == alvo } ?: if (tela?.currentFocus?.id == R.id.inicioInformacoes)
+                alvo to tela.findViewById<ImageView>(R.id.inicioFundo)?.drawable?.constantState else null
             context.startActivity(alvo.em(Intent(context, FichaActivity::class.java)))
         }
 
