@@ -380,6 +380,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         val completas = topo + lista.filterNot { it.titulo in grupos }
         if (completas.isNotEmpty()) {
             mostrarFilas(completas)
+            sugerirPorHistorico(this)?.let { mostrarFilas(completas + it) }
             if (topo.isNotEmpty()) guardarFileiras(Inicio.organizarCatalogo(completas, getString(R.string.vod_continuar)))
         }
     }

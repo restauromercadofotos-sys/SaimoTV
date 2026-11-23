@@ -89,6 +89,17 @@ object Progresso {
         val editor = prefs(context).edit()
         val meta = listOf(endereco.titulo, if (endereco.serie) "s" else "f", endereco.letra,
             endereco.ano, endereco.colecao, endereco.tmdbId.toString()).joinToString("\t")
+        if (!endereco.serie) {
+            val aliases = registros(context).filter { !it.serie && mesmoFilme(it, endereco, chave.removePrefix("f|")) }
+            val recente = aliases.maxByOrNull { it.quando }
+            if (recente != null && recente.chave != chave) {
+                val prefs = prefs(context)
+                editor.putLong(chave, prefs.getLong(recente.chave, 0))
+                    .putLong("$chave|d", prefs.getLong("${recente.chave}|d", 0))
+                    .putLong("$chave|t", recente.quando)
+            }
+            aliases.filter { it.chave != chave }.forEach { remover(editor, it.chave) }
+        }
         editor.putString("m|$chave", meta)
         if (endereco.serie) {
             val nome = chave.split("|").getOrNull(1).orEmpty()
@@ -102,6 +113,8 @@ object Progresso {
     fun esquecer(context: Context, andamento: Andamento) {
         val editor = prefs(context).edit()
         if (andamento.serie) editor.remove("u|${andamento.nome}").remove("u|${andamento.nome}|t")
+        if (!andamento.serie) registros(context).filter { !it.serie && mesmoFilme(it, andamento.endereco, andamento.nome) }
+            .forEach { remover(editor, it.chave) }
         editor.remove(andamento.chave).remove("${andamento.chave}|d").remove("${andamento.chave}|t")
         editor.apply()
     }
@@ -149,7 +162,30 @@ object Progresso {
             c.getOrNull(5)?.toIntOrNull() ?: 0)
     }
 
+    private fun remover(e: android.content.SharedPreferences.Editor, chave: String) {
+        e.remove(chave).remove("$chave|d").remove("$chave|t").remove("m|$chave")
+    }
+
+    internal fun mesmoFilme(a: Andamento, b: Endereco?, nome: String): Boolean {
+        val x = a.endereco
+        if (x != null && b != null && x.tmdbId > 0 && b.tmdbId > 0) return x.tmdbId == b.tmdbId
+        fun identidade(e: Endereco?, n: String): Pair<String, String> {
+            val titulo = e?.titulo ?: n
+            val ano = e?.ano.orEmpty().ifBlank { Regex("""\((\d{4})\)$""").find(n)?.groupValues?.get(1).orEmpty() }
+            return Vod.normalizar(Generos.semAno(titulo)) to ano
+        }
+        return identidade(x, a.nome) == identidade(b, nome)
+    }
+
     fun emAndamento(context: Context): List<Andamento> {
+        val unicos = mutableListOf<Andamento>()
+        for (item in registros(context)) {
+            if (item.serie || unicos.none { !it.serie && mesmoFilme(it, item.endereco, item.nome) }) unicos += item
+        }
+        return unicos
+    }
+
+    private fun registros(context: Context): List<Andamento> {
         val tudo = prefs(context).all
         val out = mutableListOf<Andamento>()
         val seriesVistas = HashSet<String>()

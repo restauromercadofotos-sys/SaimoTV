@@ -607,12 +607,19 @@ object Detalhes {
         val limpo = termo.trim()
         if (limpo.length < 2) return@withContext emptyList()
         val q = java.net.URLEncoder.encode(limpo, "UTF-8")
-        val json = pedir("$BASE/search/multi?api_key=$CHAVE&language=pt-BR&query=$q&include_adult=false")
-            ?: return@withContext emptyList()
-        val results = json.optJSONArray("results") ?: return@withContext emptyList()
+        fun exato(item: JSONObject) = listOf("name", "title", "original_name", "original_title")
+            .any { Vod.normalizar(item.optString(it)) == Vod.normalizar(limpo) }
+        suspend fun consultar(idioma: String): List<JSONObject> {
+            val results = pedir("$BASE/search/multi?api_key=$CHAVE&language=$idioma&query=$q&include_adult=false")
+                ?.optJSONArray("results") ?: return emptyList()
+            return (0 until results.length()).mapNotNull { results.optJSONObject(it) }
+                .filter { it.optString("media_type") in setOf("movie", "tv") }
+        }
+        val locais = consultar("pt-BR")
+        val candidatos = if (locais.any(::exato)) locais else locais + consultar("en-US")
         val out = mutableListOf<TituloTmdb>()
-        for (i in 0 until minOf(results.length(), 20)) {
-            val item = results.optJSONObject(i) ?: continue
+        for (item in candidatos.distinctBy { it.optString("media_type") to it.optInt("id") }
+            .sortedWith(compareByDescending<JSONObject>(::exato).thenByDescending { it.optDouble("popularity", 0.0) })) {
             val mediaType = item.optString("media_type")
             if (mediaType != "movie" && mediaType != "tv") continue
             val isSerie = mediaType == "tv"

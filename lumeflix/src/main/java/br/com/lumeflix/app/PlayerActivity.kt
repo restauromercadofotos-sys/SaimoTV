@@ -227,6 +227,11 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         Icones.inicio(findViewById(R.id.proximoAgora), R.drawable.ic_play)
         findViewById<View>(R.id.proximoAgora).setOnClickListener { irParaProximo(sozinho = false) }
         findViewById<View>(R.id.proximoCancelar).setOnClickListener { dispensarProximo() }
+        (barra as android.widget.SeekBar).apply {
+            setOnTouchListener { _, _ -> true }
+            thumb.alpha = if (linha.hasFocus()) 255 else 0
+            linha.setOnFocusChangeListener { _, foco -> thumb.alpha = if (foco) 255 else 0; invalidate() }
+        }
         linha.setOnKeyListener { _, codigo, evento ->
             if (evento.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             when (codigo) {
@@ -1414,15 +1419,14 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
             botao(getString(R.string.player_episodios), "eps", R.drawable.ic_episodes) { painelEpisodios() }
             if (r.seguinte(atual) != null) botao(getString(R.string.player_proximo_ep), "prox", R.drawable.ic_skip_next) { irParaProximo(false) }
         }
+        botao(getString(R.string.player_qualidade), "qualidade", R.drawable.ic_hd) { painelQualidade() }
+        if (opcoes.size > 1) botao("Servidor", "servidor", R.drawable.ic_swap) { painelFonte() }
         botao("Mais opções", "mais", R.drawable.ic_more) {
             val itens = buildList {
                 add(Painel.Item(getString(R.string.player_audio_legenda), icone = R.drawable.ic_subtitles) { painelFaixas() })
                 val versoes = (ep?.fontes ?: r?.filme?.fontes)?.keys.orEmpty()
                 if (versoes.size > 1) add(Painel.Item(getString(R.string.player_versao), Titulos.rotulo(versao),
                     icone = R.drawable.ic_translate) { painelVersao() })
-                if (opcoes.size > 1) add(Painel.Item(getString(R.string.player_fontes), rotuloFonte(fonte),
-                    icone = R.drawable.ic_swap) { painelFonte() })
-                add(Painel.Item(getString(R.string.player_qualidade), icone = R.drawable.ic_hd) { painelQualidade() })
                 add(Painel.Item(getString(R.string.player_recomecar), icone = R.drawable.ic_replay) {
                     player?.seekTo(0)
                     mostrarControles()

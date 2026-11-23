@@ -1,5 +1,6 @@
 package br.com.lumeflix.app
 
+import kotlinx.coroutines.async
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -266,13 +267,14 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
                 }
             }, Inicio.Tipo.LARGO)
 
+            val titulosOnline = if (termo.length >= 3) async { Detalhes.buscarTitulos(termo) } else null
             val achados = Vod.buscar(this@BuscaActivity, termo, if (termo.length == 1) 20 else 80)
             val filmes = achados.filter { !it.serie }
             val series = achados.filter { it.serie }
             if (filmes.isNotEmpty()) filas += Inicio.Fila(getString(R.string.vod_filmes), filmes.map { cartao(it) })
             if (series.isNotEmpty()) filas += Inicio.Fila(getString(R.string.vod_series), series.map { cartao(it) })
 
-            if (filas.isNotEmpty()) mostrar(filas, termo)
+            mostrar(filas, termo)
             val colecoes = if (termo.length >= 2) Vod.buscarColecoes(this@BuscaActivity, termo).take(30) else emptyList()
             if (colecoes.isNotEmpty()) filas += Inicio.Fila(getString(R.string.busca_colecoes), colecoes.map { (tipo, c) ->
                 val alvo = Alvo(c.titulo, true, "", c.ano, tipo, c.tmdbId.toIntOrNull() ?: 0)
@@ -285,8 +287,8 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
 
             // Lançamentos e TMDB: busca novidades e lançamentos fora do catálogo local
             if (termo.length >= 3) {
-                delay(300)
-                val tmdbTitulos = Detalhes.buscarTitulos(termo)
+                // A consulta já foi estabilizada antes da busca local.
+                val tmdbTitulos = titulosOnline?.await().orEmpty()
                 if (tmdbTitulos.isNotEmpty() && digitado.toString().trim() == termo) {
                     val relacionados = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                         Generos.carregar(this@BuscaActivity)
@@ -295,8 +297,15 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
                             titulo to Vod.achar(this@BuscaActivity, local, titulo.serie)
                         }
                     }
-                    val disponiveis = relacionados.mapNotNull { it.second }.distinct().filterNot { it in achados }
-                    if (disponiveis.isNotEmpty()) filas += Inicio.Fila("Outros títulos do catálogo", disponiveis.map(::cartao))
+                    for (serie in listOf(false, true)) {
+                        val nome = getString(if (serie) R.string.vod_series else R.string.vod_filmes)
+                        val locais = achados.filter { it.serie == serie }
+                        val ordenados = (relacionados.mapNotNull { it.second }.filter { it.serie == serie } + locais).distinct()
+                        if (ordenados.isNotEmpty()) {
+                            filas.removeAll { it.titulo == nome }
+                            filas.add(0, Inicio.Fila(nome, ordenados.map { a -> cartao(a, relacionados.firstOrNull { it.second == a }?.first?.capa) }))
+                        }
+                    }
                     val descobertas = relacionados.filter { it.second == null }.map { (titulo, _) ->
                         val alvo = Alvo(titulo.titulo, titulo.serie, "", titulo.ano, tmdbId = titulo.tmdbId)
                         Inicio.Cartao(titulo.titulo, titulo.capa.orEmpty(), titulo.titulo.take(1), alvo = alvo) {
@@ -325,9 +334,9 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
         }
     }
 
-    private fun cartao(a: Vod.Achado): Inicio.Cartao {
+    private fun cartao(a: Vod.Achado, poster: String? = null): Inicio.Cartao {
         val alvo = Alvo(a.titulo, a.serie, a.letra, a.ano)
-        return Inicio.Cartao(a.nomeCompleto, "", a.titulo.take(1).uppercase(), procurarCapa = true,
+        return Inicio.Cartao(a.nomeCompleto, (poster ?: Generos.capa(a.nomeCompleto, a.serie)).orEmpty(), a.titulo.take(1).uppercase(), procurarCapa = true,
             nomeDaCapa = a.nomeCompleto, alvo = alvo,
             progresso = if (a.serie) null else Progresso.fracao(this, Progresso.chaveFilme(a.titulo))) {
             lembrar(); FichaActivity.abrir(this, alvo)
@@ -337,8 +346,9 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
     private fun lembrar() = Preferencias.lembrarBusca(digitado.toString())
 
     private fun mostrar(filas: List<Inicio.Fila>, termo: String) {
-        adaptador.trocar(filas)
-        estado.visibility = if (filas.isEmpty()) View.VISIBLE else View.GONE
+        val preenchidas = filas.filter { it.cartoes.isNotEmpty() }
+        adaptador.trocar(preenchidas)
+        estado.visibility = if (preenchidas.isEmpty()) View.VISIBLE else View.GONE
         estado.text = if (Enderecos.temAlgum) getString(R.string.busca_nada, termo) else getString(R.string.vazio_inicio)
     }
 
@@ -359,8 +369,9 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
                 FichaActivity.abrir(this, alvo)
             }
         })
-        adaptador.trocar(filas)
-        estado.visibility = if (filas.isEmpty()) View.VISIBLE else View.GONE
+        val preenchidas = filas.filter { it.cartoes.isNotEmpty() }
+        adaptador.trocar(preenchidas)
+        estado.visibility = if (preenchidas.isEmpty()) View.VISIBLE else View.GONE
         estado.text = getString(R.string.busca_comece)
     }
 }

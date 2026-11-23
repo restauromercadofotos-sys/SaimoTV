@@ -44,6 +44,7 @@ internal class CarrosselInicio(
         filas.viewTreeObserver.addOnGlobalFocusChangeListener { _, foco ->
             ultimaInteracao = android.os.SystemClock.elapsedRealtime()
             if (foco == null || foco === filas) return@addOnGlobalFocusChangeListener
+            if (banner.visibility == View.GONE && tela.findViewById<View>(R.id.menuGlobalAbas)?.hasFocus() == true) return@addOnGlobalFocusChangeListener
             val holder = filas.findContainingViewHolder(foco)
             val linha = holder?.bindingAdapterPosition ?: -1
             val params = banner.layoutParams as android.widget.LinearLayout.LayoutParams

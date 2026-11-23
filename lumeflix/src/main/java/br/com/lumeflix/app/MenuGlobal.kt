@@ -109,6 +109,7 @@ object MenuGlobal {
                 // entrar na barra vindo das categorias.
                 setOnKeyListener { v, codigo, evento ->
                     if (evento.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                    if (abas.orientation == LinearLayout.VERTICAL) return@setOnKeyListener false
                     val passo = when (codigo) {
                         android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> 1
                         android.view.KeyEvent.KEYCODE_DPAD_LEFT -> -1
@@ -279,6 +280,24 @@ abstract class TelaComMenu : AppCompatActivity() {
         MenuGlobal.atualizar(barraMenu)
     }
 
+    private var ultimoCartaoLateral: View? = null
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        val abas = barraMenu?.findViewById<LinearLayout>(R.id.menuGlobalAbas)
+        if (abas?.orientation == LinearLayout.VERTICAL && event.action == android.view.KeyEvent.ACTION_DOWN) {
+            val foco = currentFocus
+            if (abas.hasFocus() && event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT &&
+                ultimoCartaoLateral?.takeIf { it.isAttachedToWindow }?.requestFocus() == true) return true
+            val fila = foco?.parent as? androidx.recyclerview.widget.RecyclerView
+            if (event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT && fila?.id == R.id.filaCapas &&
+                fila.getChildAdapterPosition(foco) == 0) {
+                ultimoCartaoLateral = foco
+                MenuGlobal.focar(barraMenu, aba)
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun setContentView(layoutResID: Int) {
         // Recorta cada parte no próprio espaço: a imagem larga da ficha, sem
         // isso, desenhava por cima do menu.
@@ -303,10 +322,23 @@ abstract class TelaComMenu : AppCompatActivity() {
             }
             val banner = conteudo.findViewById<View>(R.id.inicioBanner)
             val lista = conteudo.findViewById<View>(R.id.inicioFilas)
-            val topoOriginal = lista.paddingTop
+            val abas = barra.findViewById<LinearLayout>(R.id.menuGlobalAbas)
+            val grupo = barra as LinearLayout
+            val marca = grupo.getChildAt(1)
+            val inicio = lista.paddingLeft
+            val margem = (110 * resources.displayMetrics.density).toInt()
             lista.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-                val topo = topoOriginal + if (banner.visibility == View.GONE) barra.height else 0
-                if (lista.paddingTop != topo) lista.setPadding(lista.paddingLeft, topo, lista.paddingRight, lista.paddingBottom)
+                val lateral = banner.visibility == View.GONE
+                if (lateral != (abas.orientation == LinearLayout.VERTICAL)) {
+                    abas.orientation = if (lateral) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+                    marca.visibility = if (lateral) View.GONE else View.VISIBLE
+                    val d = resources.displayMetrics.density
+                    grupo.setPadding(((if (lateral) 6 else 40) * d).toInt(), (18*d).toInt(),
+                        ((if (lateral) 4 else 40) * d).toInt(), (4*d).toInt())
+                    grupo.layoutParams = android.widget.FrameLayout.LayoutParams(
+                        if (lateral) margem else -1, -2, if (lateral) Gravity.START or Gravity.CENTER_VERTICAL else Gravity.TOP)
+                    lista.setPadding(inicio + if (lateral) margem else 0, lista.paddingTop, lista.paddingRight, lista.paddingBottom)
+                }
             }
         }
         vazioView = vazio

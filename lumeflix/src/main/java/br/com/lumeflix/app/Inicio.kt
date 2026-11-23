@@ -155,6 +155,11 @@ object Inicio {
             resultado.add(pos, continuar)
             resultado.addAll(pos + 1, rankings)
         }
+        val sugestao = resultado.firstOrNull { it.titulo.startsWith("Porque você viu ") }
+        if (sugestao != null) {
+            resultado.remove(sugestao)
+            resultado.add(minOf(3, resultado.size), sugestao)
+        }
         return resultado
     }
 

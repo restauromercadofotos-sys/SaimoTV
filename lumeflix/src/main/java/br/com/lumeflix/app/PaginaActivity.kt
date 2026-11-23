@@ -173,6 +173,7 @@ open class PaginaActivity : TelaComMenu() {
             }
             lista.removeAll { fila -> editoriais.any { it.titulo.equals(fila.titulo, ignoreCase = true) } }
             if (editoriais.isNotEmpty()) mostrar(editoriais + lista)
+            sugerirPorHistorico(this, serie)?.let { mostrar(editoriais + lista + it) }
         }
     }
 
