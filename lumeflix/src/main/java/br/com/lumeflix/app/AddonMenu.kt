@@ -35,7 +35,7 @@ internal object AddonMenu {
     private fun consultar(ctx: AppCompatActivity, link: String, salvar: Boolean) {
         ctx.lifecycleScope.launch {
             val a = runCatching { Addons.importar(link,salvar) }.getOrNull()
-            if (a == null) Toast.makeText(ctx,"Manifesto inválido ou indisponível",Toast.LENGTH_LONG).show()
+            if (a == null) Toast.makeText(ctx,"Verifique o link e se o addon oferece filmes ou séries.",Toast.LENGTH_LONG).show()
             else AlertDialog.Builder(ctx).setTitle(a.nome).setMessage("Manifesto válido. Recursos: " +
                 a.recursos.joinToString { it.getString("name") } +
                 ". A disponibilidade de vídeo é verificada por título.").setPositiveButton("OK",null).show()

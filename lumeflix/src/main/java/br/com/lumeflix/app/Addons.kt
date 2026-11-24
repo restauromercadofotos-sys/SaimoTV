@@ -20,12 +20,16 @@ private fun JSONArray.textos() = (0 until length()).map { getString(it) }
 internal class Addon(val link: String, val manifesto: JSONObject) {
     val chave = UUID.nameUUIDFromBytes(link.toByteArray()).toString()
     val nome = manifesto.getString("name")
-    val tipos = manifesto.getJSONArray("types").textos()
+    private val tipos = manifesto.getJSONArray("types").textos().filter(::aceitaTipo)
     val recursos = manifesto.getJSONArray("resources").let { array ->
-        (0 until array.length()).map { i -> array.optJSONObject(i) ?: JSONObject().put("name", array.getString(i)) }
+        (0 until array.length()).map { i -> array.optJSONObject(i) ?: JSONObject().put("name", array.getString(i)) }.filter { r ->
+            val declarados = r.optJSONArray("types")?.textos() ?: tipos
+            declarados.any { it in tipos }
+        }
     }
 
     init {
+        require(recursos.isNotEmpty() && tipos.isNotEmpty()) { "Este addon precisa oferecer filmes ou séries." }
         require(nome.isNotBlank() && manifesto.getString("id").isNotBlank() && manifesto.getString("version").isNotBlank())
         require(recursos.all { resource ->
             resource.getString("name").isNotBlank() && listOf("idPrefixes","types").all { key ->
@@ -38,13 +42,14 @@ internal class Addon(val link: String, val manifesto: JSONObject) {
         }
     }
 
-    fun aceita(recurso: String, tipo: String, id: String): Boolean = recursos.any {
+    fun aceita(recurso: String, tipo: String, id: String): Boolean = tipo in tipos && recursos.any {
         val prefixos = it.optJSONArray("idPrefixes") ?: manifesto.optJSONArray("idPrefixes")
         it.optString("name") == recurso && tipo in (it.optJSONArray("types")?.textos() ?: tipos) &&
             (recurso == "catalog" || prefixos == null || prefixos.textos().any(id::startsWith))
     }
 
     fun endpoint(recurso: String, tipo: String, id: String, extras: String? = null): String {
+        require(tipo in tipos)
         val url = link.toHttpUrlOrNull()!!
         val b = url.newBuilder().removePathSegment(url.pathSegments.lastIndex)
             .addPathSegment(recurso).addPathSegment(tipo)
@@ -54,6 +59,8 @@ internal class Addon(val link: String, val manifesto: JSONObject) {
     }
 
     companion object {
+        fun aceitaTipo(tipo: String) = tipo == "movie" || tipo == "series"
+
         fun normalizar(valor: String): String {
             val raw = valor.trim()
             val url = (if (raw.startsWith("stremio://", true)) "https://" + raw.substringAfter("://") else raw).toHttpUrlOrNull()
@@ -119,6 +126,12 @@ internal object Addons {
         val progresso get() = if (publico(id)) "stremio/$tipo/${idsPublicos.first()}" else
             "stremio/$addon/$tipo/" + UUID.nameUUIDFromBytes(id.toByteArray())
     }
+    fun colecaoPermitida(colecao: String): Boolean {
+        if (!colecao.startsWith("stremio/")) return true
+        val partes = colecao.split('/', limit = 4)
+        return partes.size == 4 && Addon.aceitaTipo(partes[2])
+    }
+
     fun ref(alvo: Alvo): Ref? {
         val p = alvo.colecao.split('/', limit = 4)
         return if (p.size == 4 && p[0] == "stremio") Ref(p[1], p[2], p[3]) else null
@@ -149,6 +162,7 @@ internal object Addons {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, JSONObject>?) = size > 512
     })
     suspend fun meta(ref: Ref): JSONObject? = withContext(Dispatchers.IO) {
+        if (!Addon.aceitaTipo(ref.tipo)) return@withContext null
         val ativos = instalados()
         if (ativos.none { it.chave == ref.addon }) return@withContext null
         for (a in ativos.sortedByDescending { it.chave == ref.addon }) {
@@ -164,8 +178,9 @@ internal object Addons {
 
     data class Catalogo(val addon: Addon, val dados: JSONObject) {
         val tipo = dados.getString("type")
+        init { require(Addon.aceitaTipo(tipo)) }
         val id = dados.getString("id")
-        val nome = addon.nome + " · " + dados.optString("name",id) + " · " + when (tipo) { "movie" -> "Filmes"; "series" -> "Séries"; else -> "Canais" }
+        val nome = addon.nome + " · " + dados.optString("name",id) + " · " + if (tipo == "movie") "Filmes" else "Séries"
         private val extras = dados.optJSONArray("extra").objetos()
         fun suporta(nome: String) = extras.any { it.optString("name") == nome } ||
             dados.optJSONArray("extraSupported")?.textos()?.contains(nome) == true
@@ -185,7 +200,7 @@ internal object Addons {
     suspend fun filas(ctx: androidx.appcompat.app.AppCompatActivity, busca: String? = null, tipo: String? = null): List<Inicio.Fila> = coroutineScope {
         instalados().flatMap { a -> a.manifesto.optJSONArray("catalogs").objetos().mapNotNull {
             runCatching { Catalogo(a,it) }.getOrNull()
-        } }.filter { (tipo == null || it.tipo == tipo) && it.tipo in setOf("movie","series","channel","tv") &&
+        } }.filter { (tipo == null || it.tipo == tipo) &&
             it.addon.aceita("catalog",it.tipo,it.id) && it.disponivel(busca != null && it.suporta("search")) }.map { cat -> async {
             val remota = busca != null && cat.suporta("search")
             val primeira = cat.pagina(busca.takeIf { remota },0)
@@ -208,6 +223,7 @@ internal object Addons {
     }
 
     suspend fun fontesDoVideo(ref: Ref, ep: Titulos.Ep?, publicos: List<String> = ref.idsPublicos): Map<String,List<String>> {
+        if (!Addon.aceitaTipo(ref.tipo)) return emptyMap()
         val ids = if (ep == null) publicos else listOfNotNull(ep.videoId) + publicos.filter(::publico)
             .map { "$it:${ep.temporada}:${ep.numero}" }
         return coroutineScope {

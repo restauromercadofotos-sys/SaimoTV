@@ -61,24 +61,13 @@ object SincroniaConnect {
                 put("letra", f.letra)
             })
         }
-        val favCanais = JSONArray()
-        Favorites.load(context)
-        for (nome in Favorites.todos()) favCanais.put(nome)
         return JSONObject().apply {
             put("t", "dados")
             put("progresso", progresso)
             put("favTitulos", favTitulos)
-            put("favCanais", favCanais)
             put("listas", JSONObject().apply {
-                put("canais", Enderecos.canais.orEmpty())
                 put("filmes", Enderecos.filmes.orEmpty())
                 put("em", Enderecos.escolhidosEm(context))
-                put("minhas", JSONArray().apply {
-                    for (l in MinhasListas.todas()) {
-                        val link = l.link ?: continue
-                        put(JSONObject().put("nome", l.nome).put("link", link))
-                    }
-                })
             })
         }
     }
@@ -88,35 +77,12 @@ object SincroniaConnect {
         val em = l.optLong("em")
         val local = Enderecos.escolhidosEm(context)
         fun ler(chave: String): String? = l.optString(chave).takeIf { it.isNotBlank() }?.let { Enderecos.normalizar(it) }
-        if (l.has("canais") && l.has("filmes")) {
-            val canais = ler("canais")
-            val filmes = ler("filmes")
-            var c = Enderecos.canais
-            var f = Enderecos.filmes
-            if (em > local) {
-                c = canais; f = filmes
-            } else if (local == 0L) {
-                // Aqui nunca se escolheu nada: fica o que o celular escolheu
-                // (e um endereço que o celular não tem não apaga o daqui).
-                if (canais != null) c = canais
-                if (filmes != null) f = filmes
-            }
-            if (c != Enderecos.canais || f != Enderecos.filmes) {
-                Enderecos.definir(context, c, f, if (em > local) em else System.currentTimeMillis())
-                Listas.recarregar(context)
-            }
+        if (!l.has("filmes")) return
+        val filmes = ler("filmes")
+        if (filmes != Enderecos.filmes && (em > local || (local == 0L && filmes != null))) {
+            Enderecos.definir(context,null,filmes,if (em > local) em else System.currentTimeMillis())
+            Listas.recarregar(context)
         }
-        val minhas = l.optJSONArray("minhas") ?: return
-        var novas = 0
-        for (i in 0 until minhas.length()) {
-            val m = minhas.optJSONObject(i) ?: continue
-            val link = m.optString("link").trim()
-            if (!(link.startsWith("http://") || link.startsWith("https://"))) continue
-            if (MinhasListas.todas().any { it.link == link }) continue
-            runCatching { MinhasListas.adicionar(m.optString("nome"), link, MinhasListas.baixar(link)) }
-                .onSuccess { novas++ }
-        }
-        if (novas > 0) runCatching { Remote.refresh(context, forcar = false) }
     }
 
     /** Junta o que veio do celular ao que a TV tem. */
@@ -159,13 +125,6 @@ object SincroniaConnect {
             if (!VodFavoritos.contem(context, titulo, serie, ano)) {
                 VodFavoritos.alternar(context, VodFavoritos.Item(titulo, serie, f.optString("letra"), ano))
             }
-        }
-
-        val canais = json.optJSONArray("favCanais") ?: JSONArray()
-        Favorites.load(context)
-        for (i in 0 until canais.length()) {
-            val nome = canais.optString(i).takeIf { it.isNotBlank() } ?: continue
-            if (!Favorites.contains(nome)) Favorites.toggle(context, nome)
         }
 
         json.optJSONObject("listas")?.let { runCatching { aplicarListas(context, it) } }

@@ -504,12 +504,12 @@ object Connect {
             // 1. GET /info (Descoberta HTTP rápida)
             if (primeiraLinha.startsWith("GET /info")) {
                 val infoJson = JSONObject().apply {
-                    put("app", "saimo-tv")
+                    put("app", "lumeflix")
                     put("id", tvId)
                     put("name", nomeDaTv())
                     put("version", BuildConfig.VERSION_NAME)
                     put("port", PORTA)
-                    put("multi", true)
+                    put("multi", false)
                 }.toString()
 
                 val resposta = "HTTP/1.1 200 OK\r\n" +
@@ -521,14 +521,6 @@ object Connect {
                         infoJson
                 output.write(resposta.toByteArray(StandardCharsets.UTF_8))
                 output.flush()
-                try { socket.shutdownOutput() } catch (_: Exception) {}
-                try { socket.close() } catch (_: Exception) {}
-                return
-            }
-
-            // 1b. GET /hls — a lista do canal para o celular, na régua da TV
-            if (primeiraLinha.startsWith("GET /hls")) {
-                ConnectHls.responder(primeiraLinha, requisicao, output)
                 try { socket.shutdownOutput() } catch (_: Exception) {}
                 try { socket.close() } catch (_: Exception) {}
                 return

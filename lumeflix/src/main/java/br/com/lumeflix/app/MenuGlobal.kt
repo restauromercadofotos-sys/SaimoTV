@@ -254,7 +254,7 @@ abstract class TelaComMenu : AppCompatActivity() {
 
     /** Tela vazia: adicionar uma lista M3U ou com usuário e senha. */
     protected fun pedirLista() {
-        MinhasListasTela.adicionarPorLink(this) { aoMudarListas() }
+        AddonMenu.abrir(this)
     }
 
     /** Os endereços mudaram e os dados já foram pedidos de novo. */
@@ -386,6 +386,7 @@ abstract class TelaComMenu : AppCompatActivity() {
         vazioView = vazio
         vazio.findViewById<TextView>(R.id.vazioBotao).apply {
             Icones.inicio(this, R.drawable.ic_link)
+            text = "Addons do Stremio"
             setOnClickListener { pedirLista() }
         }
         vazio.findViewById<TextView>(R.id.vazioBotaoSaimo).apply {

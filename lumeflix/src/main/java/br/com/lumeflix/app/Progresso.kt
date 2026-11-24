@@ -243,7 +243,7 @@ object Progresso {
                 temporada = temporada, episodio = episodio,
             )
         }
-        return out.sortedByDescending { it.quando }
+        return out.filter { Addons.colecaoPermitida(it.endereco?.colecao.orEmpty()) }.sortedByDescending { it.quando }
     }
 
     /** Posição guardada, ou zero. */

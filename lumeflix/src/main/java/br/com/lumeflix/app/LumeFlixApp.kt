@@ -73,12 +73,10 @@ class LumeFlixApp : Application(), SingletonImageLoader.Factory {
         Resolvedor404.iniciarBestcine(this)
         Upscaling.iniciar(this)
         Enderecos.iniciar(this)
-        MinhasListas.iniciar(this)
         Vr.iniciar(this)
         Aparelho.conhecer(this)
         Telemetria.iniciar(this)
         FontesDesativadas.iniciar(this)
-        Lembretes.iniciar(this)
         Connect.iniciar(this)
         // As raízes de certificado e o cliente de rede ficam prontos numa
         // thread à parte, enquanto a primeira tela desenha: montados na hora

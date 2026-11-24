@@ -8,8 +8,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import android.widget.Toast
-import android.content.ActivityNotFoundException
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
@@ -45,41 +43,6 @@ class AjustesActivity : TelaComMenu() {
     private lateinit var lista: RecyclerView
     private val adaptador = Adaptador()
     private val atualizacao by lazy { OfertaDeAtualizacao(this) { Toast.makeText(this, it, Toast.LENGTH_SHORT).show() } }
-
-    /// Minhas listas: lista a atualizar pelo arquivo (nulo = lista nova).
-    private var alvoArquivo: String? = null
-    private val seletorDeArquivo = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        MinhasListasTela.aoEscolherArquivo(this, uri, alvoArquivo, ::pedirArquivo) { redesenhar() }
-    }
-
-    private val permissaoDePastas = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) MinhasListasTela.mostrarArquivos(this, alvoArquivo, ::pedirArquivo) { redesenhar() }
-        else Toast.makeText(this, "Sem permissão para ver os arquivos. Use o link da lista.", Toast.LENGTH_LONG).show()
-    }
-
-    /**
-     * Seletor de arquivos do sistema (SAF). Muitas TVs trazem só um "stub" no
-     * lugar (a pessoa veria um aviso em inglês) ou nenhum app: aí a escolha é
-     * feita numa lista própria dos .m3u de Download/Documents.
-     */
-    private fun pedirArquivo(alvo: String?) {
-        alvoArquivo = alvo
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
-        val dono = intent.resolveActivity(packageManager)?.packageName
-        if (dono == null || dono == "com.android.tv.frameworkpackagestubs") { listarPastas(); return }
-        try {
-            seletorDeArquivo.launch(arrayOf("*/*"))
-        } catch (e: ActivityNotFoundException) {
-            listarPastas()
-        }
-    }
-
-    private fun listarPastas() {
-        val precisa = android.os.Build.VERSION.SDK_INT in 23..32 &&
-            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (precisa) permissaoDePastas.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
-        else MinhasListasTela.mostrarArquivos(this, alvoArquivo, ::pedirArquivo) { redesenhar() }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -190,17 +153,6 @@ class AjustesActivity : TelaComMenu() {
         Opcao(getString(R.string.ajustes_listas), { Listas.resumo(this) }) {
             ListasDialogo.mostrar(this) { redesenhar() }
         },
-        Opcao(getString(R.string.ajustes_minhas_listas), { MinhasListas.resumo() }) {
-            MinhasListasTela.mostrar(this, ::pedirArquivo) { redesenhar() }
-        },
-        Opcao(getString(R.string.ajustes_abrir_em), {
-            getString(if (Preferencias.abrirEm == "canal") R.string.ajustes_abrir_canal else R.string.ajustes_abrir_inicio)
-        }) {
-            escolher(getString(R.string.ajustes_abrir_em), listOf("inicio", "canal"), Preferencias.abrirEm,
-                { getString(if (it == "canal") R.string.ajustes_abrir_canal else R.string.ajustes_abrir_inicio) }) {
-                Preferencias.abrirEm = it
-            }
-        },
         Opcao(getString(R.string.ajustes_timer), {
             if (TimerDeSono.ativo) getString(R.string.ajustes_timer_em, TimerDeSono.restanteMin())
             else getString(R.string.ajustes_desligado)
@@ -271,7 +223,7 @@ class AjustesActivity : TelaComMenu() {
             withContext(Dispatchers.IO) {
                 File(filesDir, "vod").deleteRecursively()
                 runCatching { coil3.SingletonImageLoader.get(this@AjustesActivity).diskCache?.clear() }
-                Remote.refresh(this@AjustesActivity, forcar = true)
+                Vod.indice(this@AjustesActivity)
             }
             runCatching { coil3.SingletonImageLoader.get(this@AjustesActivity).memoryCache?.clear() }
             Toast.makeText(this@AjustesActivity, R.string.ajustes_recarregado, Toast.LENGTH_LONG).show()

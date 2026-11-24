@@ -64,6 +64,7 @@ object Titulos {
     }
 
     private suspend fun resolverNoCatalogo(context: Context, alvo: Alvo, aoLerLocais: (suspend (Resolvido) -> Unit)?): Resolvido? {
+        if (!Addons.colecaoPermitida(alvo.colecao)) return null
         Addons.ref(alvo)?.let { ref ->
             val videos = Addons.meta(ref)?.optJSONArray("videos").objetos()
             val eps = videos.mapNotNull {

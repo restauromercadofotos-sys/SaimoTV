@@ -58,6 +58,7 @@ data class Alvo(
 
         fun de(intent: Intent?): Alvo? {
             val titulo = intent?.getStringExtra(TITULO) ?: return null
+            if (!Addons.colecaoPermitida(intent.getStringExtra(COLECAO).orEmpty())) return null
             return Alvo(
                 titulo = titulo,
                 serie = intent.getBooleanExtra(SERIE, false),
@@ -334,7 +335,6 @@ class FichaActivity : TelaComMenu() {
         carregando.visibility = View.GONE
         alvo.ano.takeIf { it.isNotBlank() }?.let { selo(findViewById(R.id.fichaSelos), it) }
         Addons.ref(alvo)?.let { ref ->
-            if (ref.tipo == "tv" || ref.tipo == "channel") findViewById<TextView>(R.id.fichaTipo).text = "Canal"
             lifecycleScope.launch(semDerrubar) {
                 val m = Addons.meta(ref) ?: return@launch
                 mostrar(Detalhes.Ficha(titulo=alvo.titulo,sinopse=m.optString("description"),ano=alvo.ano,

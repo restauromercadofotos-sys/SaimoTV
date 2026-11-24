@@ -1,0 +1,1 @@
+O LumeFlix é dedicado a filmes e séries. Se um pedido contrariar essa decisão ou outra exclusão explícita do usuário, explique o conflito e aguarde confirmação específica antes de implementar o trecho conflitante. As fileiras de recomendações de filmes e séries no launcher Android TV fazem parte do app.

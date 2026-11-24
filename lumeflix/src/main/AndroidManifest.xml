@@ -5,12 +5,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <!-- Minhas listas: só quando a TV não tem seletor de arquivos, para listar os
-         .m3u da pasta Download. Pedida na hora, nunca na abertura do app. -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- Instalar a atualização baixada; o sistema ainda pede a confirmação. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- "Continuar assistindo" e a fileira do Saimo na tela inicial da TV. -->
+    <!-- "Continuar assistindo" e a fileira do LumeFlix na tela inicial da TV. -->
     <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
 
     <!-- Sem toque, tudo pelo controle. Leanback opcional para TV Box com Android comum. -->

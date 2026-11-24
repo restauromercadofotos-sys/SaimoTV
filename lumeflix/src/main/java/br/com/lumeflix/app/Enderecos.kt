@@ -39,8 +39,7 @@ object Enderecos {
     fun iniciar(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         // Uma escolha já gravada, inclusive vazia, sempre vence o padrão.
-        canais = if (prefs.contains(CANAIS)) normalizar(prefs.getString(CANAIS, "").orEmpty())
-                  else PADRAO_CANAIS.takeIf { BuildConfig.TV_AO_VIVO }
+        canais = null
         filmes = if (prefs.contains(FILMES)) normalizar(prefs.getString(FILMES, "").orEmpty())
                   else PADRAO_FILMES.takeUnless { BuildConfig.TV_AO_VIVO }
         if (!prefs.contains(CANAIS) || !prefs.contains(FILMES)) {
@@ -67,12 +66,12 @@ object Enderecos {
 
     fun definir(context: Context, novoCanais: String?, novoFilmes: String?,
                 em: Long = System.currentTimeMillis()) {
-        val mudouCanais = novoCanais != canais
+        val mudouCanais = canais != null
         val mudouFilmes = novoFilmes != filmes
-        canais = novoCanais
+        canais = null
         filmes = novoFilmes
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().apply {
-            putString(CANAIS, novoCanais.orEmpty())
+            remove(CANAIS)
             putString(FILMES, novoFilmes.orEmpty())
             putLong(EM, em)
         }.apply()

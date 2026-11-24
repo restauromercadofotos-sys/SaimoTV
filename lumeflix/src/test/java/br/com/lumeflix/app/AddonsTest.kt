@@ -27,7 +27,7 @@ class AddonsTest {
                 else -> """[{"name":"stream","types":["movie","series"],"idPrefixes":["tt"]}]"""
             }
             val body = when {
-                path.endsWith("/manifest.json") -> """{"id":"org.$prov","name":"$nome","version":"1.0.0","resources":$resources,"types":${if (prov == "tv") """["tv"]""" else """["movie","series"]"""},"catalogs":[{"id":"popular","type":"movie","extra":[{"name":"search"},{"name":"skip"}]}]}"""
+                path.endsWith("/manifest.json") -> """{"id":"org.$prov","name":"$nome","version":"1.0.0","resources":$resources,"types":${if (prov == "tv") """["tv"]""" else """["movie","series","channel"]"""},"catalogs":[{"id":"popular","type":"movie","extra":[{"name":"search"},{"name":"skip"}]}]}"""
                 "/catalog/" in path -> """{"metas":[{"type":"movie","id":"tt123","name":"Teste"}]}"""
                 "/meta/" in path -> """{"meta":{"id":"obra:9","type":"series","name":"Paradise","videos":[{"id":"ep:xyz","season":1,"episode":1}]}}"""
                 prov == "fora" -> ""
@@ -73,8 +73,13 @@ class AddonsTest {
             val ep = Titulos.Ep(1,1,emptyMap(),video.getString("id"))
             assertEquals(listOf(master),Addons.fontesDoVideo(ref,ep)["dub"])
             assertTrue(Addons.fontes("series",listOf("ep:xyz"),cat.chave).isEmpty())
-            val tv = Addons.importar(link("tv"),true)
-            assertEquals(listOf(master),Addons.fontesDoVideo(Addons.Ref(tv.chave,"tv","canal:1"),null)["dub"])
+            assertTrue(runCatching { Addons.importar(link("tv"),true) }.isFailure)
+            val antes = pedidos.size
+            for (tipo in listOf("tv","channel")) {
+                assertFalse(Addons.colecaoPermitida("stremio/antigo/$tipo/1"))
+                assertTrue(Addons.fontesDoVideo(Addons.Ref(cat.chave,tipo,"canal:1"),null).isEmpty())
+            }
+            assertEquals(antes,pedidos.size)
             val drama = Addons.Ref(cat.chave,"series","tmdb:245927")
             val reality = drama.copy(id="tmdb:51025")
             assertEquals(listOf(master),Addons.fontesDoVideo(drama,Titulos.Ep(1,1,emptyMap()))["dub"])

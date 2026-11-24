@@ -204,6 +204,6 @@ object Listas {
 
     fun resumo(context: android.content.Context): String {
         fun situacao(v: String?) = context.getString(if (v != null) R.string.listas_informado else R.string.listas_em_branco)
-        return context.getString(R.string.ajustes_listas_resumo, situacao(Enderecos.canais), situacao(Enderecos.filmes))
+        return situacao(Enderecos.filmes)
     }
 }
