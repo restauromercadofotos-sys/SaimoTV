@@ -112,6 +112,7 @@ object Detalhes {
     private fun arquivo(marca: String) = pasta?.let { java.io.File(it, java.util.UUID.nameUUIDFromBytes(marca.toByteArray()).toString()) }
 
     suspend fun salva(titulo: String, serie: Boolean, id: Int?): Ficha? = withContext(Dispatchers.IO) {
+        if (id == null || id <= 0) return@withContext null
         val marca = (if (serie) "s:" else "f:") + titulo + (id?.let { "#$it" } ?: "")
         synchronized(guardadas) { guardadas[marca] } ?: runCatching {
             val json = JSONObject(arquivo(marca)!!.readText())
@@ -326,6 +327,7 @@ object Detalhes {
                 val serie = trabalho.optString("media_type") == "tv"
                 val titulo = Generos.titulo(idDoTitulo, serie) ?: continue
                 val achado = Vod.achar(context, titulo, serie) ?: continue
+                if (Generos.id(achado.nomeCompleto,serie) != idDoTitulo) continue
                 if (!vistos.add(achado.nomeCompleto + achado.serie)) continue
                 val capa = trabalho.optString("poster_path").takeIf { it.isNotBlank() && it != "null" }
                     ?.let { IMAGENS + "w185" + it }
@@ -535,15 +537,27 @@ object Detalhes {
     suspend fun buscarId(titulo: String, serie: Boolean, ano: String = ""): Int? = withContext(Dispatchers.IO) {
         val tipo = if (serie) "tv" else "movie"
         val limpo = Generos.semAno(titulo).trim()
-        if (limpo.isBlank()) return@withContext null
+        val estreia = ano.ifBlank { Regex("""\((\d{4})\)$""").find(titulo)?.groupValues?.get(1).orEmpty() }
+        if (limpo.isBlank() || !estreia.matches(Regex("""\d{4}"""))) return@withContext null
         val q = java.net.URLEncoder.encode(limpo, "UTF-8")
-        val anoParam = if (ano.isNotBlank()) if (serie) "&first_air_date_year=$ano" else "&year=$ano" else ""
+        val anoParam = if (serie) "&first_air_date_year=$estreia" else "&year=$estreia"
         val url = "$BASE/search/$tipo?api_key=$CHAVE&language=pt-BR&query=$q$anoParam"
         val json = pedir(url) ?: return@withContext null
         val results = json.optJSONArray("results") ?: return@withContext null
         if (results.length() == 0) return@withContext null
-        val primeiro = results.optJSONObject(0) ?: return@withContext null
-        primeiro.optInt("id").takeIf { it > 0 }
+        if (json.optInt("total_pages",1) > 1) return@withContext null
+        results.objetos().filter { item ->
+            val nome = if (serie) "name" else "title"
+            item.optString(if (serie) "first_air_date" else "release_date").take(4) == estreia &&
+                listOf(nome,"original_$nome").any { Vod.normalizar(item.optString(it)) == Vod.normalizar(limpo) }
+        }.map { it.optInt("id") }.filter { it > 0 }.distinct().singleOrNull()
+    }
+
+    suspend fun tmdbDoImdb(id: String, serie: Boolean): Int? = withContext(Dispatchers.IO) {
+        if (!id.matches(Regex("""tt\d+"""))) return@withContext null
+        if (serie && id == "tt27444205") return@withContext 245927
+        val json = pedir("$BASE/find/$id?api_key=$CHAVE&external_source=imdb_id")
+        json?.optJSONArray(if (serie) "tv_results" else "movie_results").objetos().singleOrNull()?.optInt("id")?.takeIf { it > 0 }
     }
 
     data class TituloTmdb(
@@ -569,7 +583,7 @@ object Detalhes {
                 val titulos = linkedSetOf<Vod.Achado>()
                 for (id in ids.distinct()) {
                     val titulo = Generos.titulo(id, serie) ?: continue
-                    Vod.achar(context, titulo, serie)?.let(titulos::add)
+                    Vod.achar(context, titulo, serie)?.takeIf { Generos.id(it.nomeCompleto,serie) == id }?.let(titulos::add)
                     if (titulos.size == limite) break
                 }
                 return titulos.toList()

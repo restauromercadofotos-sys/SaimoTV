@@ -23,7 +23,7 @@ object InfoDosTitulos {
 
     fun de(titulo: String, serie: Boolean): Info? {
         val mapa = if (serie) series else filmes
-        return mapa[titulo] ?: mapa[Generos.semAno(titulo)]
+        return mapa[titulo]
     }
 
     suspend fun carregar(context: Context) = withContext(Dispatchers.IO) {

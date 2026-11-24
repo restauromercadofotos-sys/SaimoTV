@@ -64,7 +64,10 @@ data class Alvo(
                 letra = intent.getStringExtra(LETRA).orEmpty(),
                 ano = intent.getStringExtra(ANO).orEmpty(),
                 colecao = intent.getStringExtra(COLECAO).orEmpty(),
-                tmdbId = intent.getIntExtra(TMDB, 0),
+                tmdbId = intent.getIntExtra(TMDB, 0).let { id ->
+                    if (id == 51025 && intent.getBooleanExtra(SERIE,false) &&
+                        titulo.equals("Paradise",true) && intent.getStringExtra(ANO) == "2025") 245927 else id
+                },
             )
         }
     }
@@ -145,7 +148,7 @@ class FichaActivity : TelaComMenu() {
 
         // A capa do arquivo de fichas chega na hora; a da ficha do TMDB, se
         // vier diferente, substitui depois.
-        Generos.capa(alvo.nomeCompleto, alvo.serie)?.let { mostrarCapa(it) }
+        if (Addons.ref(alvo) == null && (alvo.tmdbId == 0 || Generos.id(alvo.nomeCompleto,alvo.serie) == alvo.tmdbId)) Generos.capa(alvo.nomeCompleto, alvo.serie)?.let { mostrarCapa(it) }
 
         assistir.text = getString(textoDoAssistir())
         Icones.inicio(assistir, R.drawable.ic_play)
@@ -330,6 +333,16 @@ class FichaActivity : TelaComMenu() {
         val carregando = findViewById<ProgressBar>(R.id.fichaCarregando)
         carregando.visibility = View.GONE
         alvo.ano.takeIf { it.isNotBlank() }?.let { selo(findViewById(R.id.fichaSelos), it) }
+        Addons.ref(alvo)?.let { ref ->
+            if (ref.tipo == "tv" || ref.tipo == "channel") findViewById<TextView>(R.id.fichaTipo).text = "Canal"
+            lifecycleScope.launch(semDerrubar) {
+                val m = Addons.meta(ref) ?: return@launch
+                mostrar(Detalhes.Ficha(titulo=alvo.titulo,sinopse=m.optString("description"),ano=alvo.ano,
+                    capa=m.optString("poster").ifBlank { null },fundo=m.optString("background").ifBlank { null },
+                    logo=m.optString("logo").ifBlank { null }))
+            }
+            return
+        }
         val arte = previa?.takeIf { it.first == alvo }?.second?.newDrawable(resources)
         previa = null
         if (arte != null && arte.intrinsicWidth >= arte.intrinsicHeight) {
@@ -349,7 +362,7 @@ class FichaActivity : TelaComMenu() {
             val salva = Detalhes.salva(alvo.titulo, alvo.serie, idInicial)
             if (salva != null) mostrar(salva)
             Generos.carregar(this@FichaActivity)
-            Generos.capa(alvo.nomeCompleto, alvo.serie)?.let { mostrarCapa(it) }
+            if (Addons.ref(alvo) == null && (alvo.tmdbId == 0 || Generos.id(alvo.nomeCompleto,alvo.serie) == alvo.tmdbId)) Generos.capa(alvo.nomeCompleto, alvo.serie)?.let { mostrarCapa(it) }
             // Destaque de anime ou dorama chega sem o id: a coleção o publica,
             // e é ele que acerta — o arquivo de fichas casa "Kevin" com outra
             // série de mesmo nome.
@@ -357,12 +370,12 @@ class FichaActivity : TelaComMenu() {
                 ?: alvo.colecao.takeIf { it.isNotEmpty() }?.let { tipo ->
                     runCatching {
                         Vod.colecao(this@FichaActivity, tipo)
-                            .firstOrNull { it.titulo.equals(alvo.titulo, ignoreCase = true) }
+                            .singleOrNull { it.titulo.equals(alvo.titulo, ignoreCase = true) && it.ano == alvo.ano }
                             ?.tmdbId?.toIntOrNull()
                     }.getOrNull()
                 }
             carregarExtras(id ?: Generos.id(alvo.nomeCompleto, alvo.serie) ?: 0)
-            val ficha = Detalhes.de(alvo.titulo, alvo.serie, id)
+            val ficha = Detalhes.de(alvo.nomeCompleto, alvo.serie, id)
             if (alvo.serie) {
                 // O TMDB nem sempre possui still_path para cada episódio.
                 // Mesmo sem detalhes, mostra arte da série em vez de números.

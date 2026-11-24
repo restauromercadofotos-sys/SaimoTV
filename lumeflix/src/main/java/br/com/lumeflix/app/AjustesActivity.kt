@@ -156,6 +156,7 @@ class AjustesActivity : TelaComMenu() {
         },
 
         Secao(getString(R.string.ajustes_geral)),
+        Opcao("Addons do Stremio", { "Gerenciar addons" }) { AddonMenu.abrir(this) },
         Opcao("BestCine", { if (Resolvedor404.bestcineConfigurado()) "Configurado" else "Adicionar acesso" }) {
             val campo = android.widget.EditText(this).apply {
                 hint = "Cole o link do manifest"

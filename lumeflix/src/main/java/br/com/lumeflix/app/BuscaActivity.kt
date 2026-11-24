@@ -267,6 +267,7 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
                 }
             }, Inicio.Tipo.LARGO)
 
+            val addons = async { Addons.filas(this@BuscaActivity,termo) }
             val titulosOnline = if (termo.length >= 3) async { Detalhes.buscarTitulos(termo) } else null
             val achados = Vod.buscar(this@BuscaActivity, termo, if (termo.length == 1) 20 else 80)
             val filmes = achados.filter { !it.serie }
@@ -293,8 +294,8 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
                     val relacionados = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                         Generos.carregar(this@BuscaActivity)
                         tmdbTitulos.map { titulo ->
-                            val local = Generos.titulo(titulo.tmdbId, titulo.serie) ?: titulo.titulo
-                            titulo to Vod.achar(this@BuscaActivity, local, titulo.serie)
+                            val local = Generos.titulo(titulo.tmdbId, titulo.serie)
+                            titulo to local?.let { Vod.achar(this@BuscaActivity, it, titulo.serie) }?.takeIf { Generos.id(it.nomeCompleto,it.serie) == titulo.tmdbId }
                         }
                     }
                     for (serie in listOf(false, true)) {
@@ -317,6 +318,9 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
                     mostrar(filas, termo)
                 }
             }
+
+            filas += addons.await()
+            mostrar(filas, termo)
 
             // Atores vêm do TMDB: por último, e só com o termo parado.
             if (termo.length >= 3) {
@@ -346,7 +350,17 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
     private fun lembrar() = Preferencias.lembrarBusca(digitado.toString())
 
     private fun mostrar(filas: List<Inicio.Fila>, termo: String) {
-        val preenchidas = filas.filter { it.cartoes.isNotEmpty() }
+        val vistos = mutableSetOf<Pair<String,String>>()
+        val preenchidas = filas.map { fila ->
+            fila.copy(cartoes=fila.cartoes.filter { c ->
+                val a = c.alvo ?: return@filter true
+                val ref = Addons.ref(a)
+                val tipo = ref?.tipo ?: if (a.serie) "series" else "movie"
+                val id = ref?.idsPublicos?.firstOrNull()?.takeIf(Addons::publico)
+                    ?: ref?.chave ?: (a.tmdbId.takeIf { it > 0 } ?: Generos.id(a.nomeCompleto,a.serie))?.let { "tmdb:$it" }
+                id == null || vistos.add(tipo to id)
+            })
+        }.filter { it.cartoes.isNotEmpty() }
         adaptador.trocar(preenchidas)
         estado.visibility = if (preenchidas.isEmpty()) View.VISIBLE else View.GONE
         estado.text = if (Enderecos.temAlgum) getString(R.string.busca_nada, termo) else getString(R.string.vazio_inicio)

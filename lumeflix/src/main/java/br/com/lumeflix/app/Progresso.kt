@@ -169,6 +169,8 @@ object Progresso {
     internal fun mesmoFilme(a: Andamento, b: Endereco?, nome: String): Boolean {
         val x = a.endereco
         if (x != null && b != null && x.tmdbId > 0 && b.tmdbId > 0) return x.tmdbId == b.tmdbId
+        if (x?.colecao.orEmpty().startsWith("stremio/") || b?.colecao.orEmpty().startsWith("stremio/"))
+            return a.nome == nome
         fun identidade(e: Endereco?, n: String): Pair<String, String> {
             val titulo = e?.titulo ?: n
             val ano = e?.ano.orEmpty().ifBlank { Regex("""\((\d{4})\)$""").find(n)?.groupValues?.get(1).orEmpty() }

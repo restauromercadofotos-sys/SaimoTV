@@ -60,7 +60,12 @@ object Generos {
 
     private fun registro(titulo: String, serie: Boolean): Registro? {
         val mapa = if (serie) series else filmes
-        return mapa[titulo] ?: mapa[semAno(titulo)] ?: run { faltou(); null }
+        if (serie && titulo.equals("Paradise (2025)",true)) return mapa[titulo] ?: Registro(titulo,245927,null,0)
+        if (serie && titulo.equals("Paradise",true)) return null
+        val ano = ANO_NO_FIM.find(titulo)?.value?.filter(Char::isDigit)?.toIntOrNull() ?: return null
+        return mapa[titulo] ?: mapa[semAno(titulo)]?.takeIf {
+            InfoDosTitulos.de(it.titulo,serie)?.ano == ano
+        } ?: run { faltou(); null }
     }
 
     /// Para buscar o arquivo novo de onde não há Context (capa, id).
@@ -103,7 +108,12 @@ object Generos {
     fun id(titulo: String, serie: Boolean): Int? = registro(titulo, serie)?.id?.takeIf { it > 0 }
 
     /** O título do acervo que corresponde a um id do TMDB, se houver. */
-    fun titulo(id: Int, serie: Boolean): String? = porId[if (serie) -id else id]?.titulo
+    fun titulo(id: Int, serie: Boolean): String? {
+        if (serie && id == 245927) return "Paradise (2025)"
+        val nome = porId[if (serie) -id else id]?.titulo ?: return null
+        val ano = InfoDosTitulos.de(nome,serie)?.ano
+        return if (semAno(nome) == nome && ano != null && ano > 0) "$nome ($ano)" else nome
+    }
 
     /** Os gêneros do título como bits — para filtrar milhares sem refazer busca. */
     fun bits(titulo: String, serie: Boolean): Int = registro(titulo, serie)?.generos ?: 0
@@ -127,6 +137,7 @@ object Generos {
     suspend fun carregar(context: Context) = withContext(Dispatchers.IO) {
         contexto = context.applicationContext
         if (prontos) return@withContext
+        InfoDosTitulos.carregar(context)
         val local = arquivoLocal(context)
         if (local.exists() && local.length() > 0) {
             runCatching { local.bufferedReader().useLines { montar(it) } }
@@ -137,12 +148,12 @@ object Generos {
     }
 
     /** Monta os mapas a partir do conteúdo do arquivo, linha a linha. */
-    private fun montar(linhas: Sequence<String>) {
+    internal fun montar(linhas: Sequence<String>) {
         val novosFilmes = HashMap<String, Registro>(40_000)
         val novasSeries = HashMap<String, Registro>(12_000)
         val novoPorId = HashMap<Int, Registro>(50_000)
         val nomes = LinkedHashMap<String, Int>()
-        val brutos = ArrayList<Pair<Registro, List<String>>>()
+        val ambiguos = hashSetOf<Pair<Boolean,String>>()
         var base = ""
         // tipo \t título \t id do TMDB \t pôster \t gêneros
         for (linha in linhas) {
@@ -153,12 +164,15 @@ object Generos {
             val serie = campos[0] == "s"
             val titulo = campos[1]
             val id = campos[2].toIntOrNull() ?: 0
+            if (serie && semAno(titulo).equals("Paradise",true) && id == 51025) continue
             val lista = campos[4].split(',').filter { it.isNotBlank() }
             for (g in lista) if (g !in nomes) nomes[g] = nomes.size
             var bits = 0
             for (g in lista) nomes[g]?.let { if (it < 31) bits = bits or (1 shl it) }
             val registro = Registro(titulo, id, campos[3].ifBlank { null }, bits)
-            (if (serie) novasSeries else novosFilmes)[titulo] = registro
+            val mapa = if (serie) novasSeries else novosFilmes
+            val anterior = mapa.put(titulo,registro)
+            if (anterior != null && anterior.id != id) ambiguos += serie to titulo
             if (id > 0) {
                 val marca = if (serie) -id else id
                 // O mesmo filme em duas grafias: o primeiro basta.
@@ -168,6 +182,8 @@ object Generos {
         // Os bits foram dados na ordem em que os gêneros apareceram; a régua
         // mostra em ordem alfabética, então a lista guarda a ordem dos bits.
         val ordemDosBits = nomes.entries.sortedBy { it.value }.map { it.key }
+        for ((serie,titulo) in ambiguos) (if (serie) novasSeries else novosFilmes).remove(titulo)
+        novoPorId.entries.removeAll { (id,r) -> ((id < 0) to r.titulo) in ambiguos }
         filmes = novosFilmes
         series = novasSeries
         porId = novoPorId

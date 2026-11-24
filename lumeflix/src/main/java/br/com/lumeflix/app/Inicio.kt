@@ -141,7 +141,7 @@ object Inicio {
                 val classificados = (fila.cartoes.asSequence() + reservas)
                     .distinctBy { c ->
                         val a = c.alvo
-                        val id = a?.tmdbId?.takeIf { it > 0 } ?: a?.let { Generos.id(it.titulo, it.serie) }
+                        val id = a?.tmdbId?.takeIf { it > 0 } ?: a?.let { Generos.id(it.nomeCompleto, it.serie) }
                         if (id != null) "id:$id" else Vod.normalizar(a?.nomeCompleto ?: c.titulo)
                     }
                     .take(10).mapIndexed { pos, c -> c.copy(ranking = pos + 1) }.toList()
@@ -477,7 +477,7 @@ object Inicio {
                 cartao.alvo?.let { alvo ->
                     holder.arteJob = escopo?.launch(semDerrubar) {
                         val ficha = pedidosDeArte.withPermit {
-                            Detalhes.de(alvo.titulo, alvo.serie, alvo.tmdbId.takeIf { it > 0 })
+                            if (Addons.ref(alvo) != null) null else Detalhes.de(alvo.nomeCompleto, alvo.serie, alvo.tmdbId.takeIf { it > 0 })
                         }
                         if (holder.cartao !== cartao) return@launch
                         if (ficha?.logo.isNullOrBlank()) holder.nome.visibility = View.VISIBLE

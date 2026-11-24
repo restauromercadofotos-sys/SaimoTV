@@ -69,6 +69,7 @@ class LumeFlixApp : Application(), SingletonImageLoader.Factory {
             }
         })
         Preferencias.iniciar(this)
+        Addons.iniciar(this)
         Resolvedor404.iniciarBestcine(this)
         Upscaling.iniciar(this)
         Enderecos.iniciar(this)

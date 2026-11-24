@@ -63,7 +63,7 @@ class Destaque(
         val alvo = cartao.alvo
         titulo.visibility = View.VISIBLE
         val prefs = tela.getSharedPreferences("arte_destaque", 0)
-        val anterior = if (alvo != null && prefs.getString("titulo", null) == alvo.nomeCompleto)
+        val anterior = if (alvo != null && prefs.getString("obra", null) == alvo.toString())
             prefs.getString("fundo", null) else null
         trocarFundo(anterior ?: cartao.capaLarga ?: cartao.capa.takeIf { it.isNotBlank() })
         titulo.text = if (alvo != null) Generos.semAno(alvo.titulo) else cartao.titulo
@@ -72,18 +72,19 @@ class Destaque(
             ?: alvo?.let { tela.getString(if (it.serie) R.string.vod_ficha_tipo_serie else R.string.vod_ficha_tipo_filme) }
                 .orEmpty()
         sinopse.text = cartao.sinopse.orEmpty()
+        if (alvo != null && Addons.ref(alvo) != null) return
         if (alvo == null) {
             // Cartão que não é título (categoria): o fundo é o de um título dela.
             val de = cartao.fundoDe ?: run { trocarFundo(null); return }
             trabalho = escopo.launch(semDerrubar) {
                 delay(250)
-                trocarFundo(Detalhes.de(de.titulo, de.serie, de.tmdbId.takeIf { it > 0 })?.fundo)
+                trocarFundo(Detalhes.de(de.nomeCompleto, de.serie, de.tmdbId.takeIf { it > 0 })?.fundo)
             }
             return
         }
         trabalho = escopo.launch(semDerrubar) {
             delay(120)
-            val ficha = Detalhes.de(alvo.titulo, alvo.serie, alvo.tmdbId.takeIf { it > 0 })
+            val ficha = Detalhes.de(alvo.nomeCompleto, alvo.serie, alvo.tmdbId.takeIf { it > 0 })
             if (ficha == null) {
                 titulo.visibility = View.VISIBLE
                 return@launch
@@ -101,7 +102,7 @@ class Destaque(
             sinopse.text = ficha.sinopse
             ficha.fundo?.let { trocarFundo(it) }
             ficha.fundo?.let { imagem ->
-                prefs.edit().putString("titulo", alvo.nomeCompleto).putString("fundo", imagem).apply()
+                prefs.edit().putString("obra", alvo.toString()).putString("fundo", imagem).apply()
                 cartao.capaLarga = imagem
                 cartao.atualizarCapaLarga?.invoke(imagem)
             }

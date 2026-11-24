@@ -311,6 +311,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     private fun mostrarLogo(r: Titulos.Resolvido) {
         val original = alvo
         lifecycleScope.launch(semDerrubar) {
+            if (r.tmdbId <= 0) return@launch
             val url = Detalhes.de(r.alvo.titulo, r.serie, r.tmdbId.takeIf { it > 0 })?.logo ?: return@launch
             if (isFinishing || isDestroyed || alvo !== original) return@launch
             val logo = findViewById<ImageView>(R.id.playerLogo)
@@ -332,9 +333,9 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         val e = intent.getIntExtra(EPISODIO, 0)
         if (t > 0 && e > 0 && !alvo.serie) alvo = alvo.copy(serie = true)
         var r = Titulos.resolver(this, alvo)
-        if (r == null && alvo.letra.isBlank()) {
-            val achado = Vod.achar(this, alvo.titulo, alvo.serie)
-                ?: Vod.buscar(this, alvo.titulo, 5).firstOrNull { it.serie == alvo.serie && Vod.normalizar(Generos.semAno(it.titulo)) == Vod.normalizar(Generos.semAno(alvo.titulo)) }
+        if (r == null && alvo.letra.isBlank() && alvo.colecao.isEmpty() && alvo.tmdbId == 0) {
+            val achado = Vod.achar(this, alvo.nomeCompleto, alvo.serie)
+
             if (achado != null) {
                 alvo = Alvo(achado.titulo, achado.serie, achado.letra, achado.ano, alvo.colecao, alvo.tmdbId)
                 r = Titulos.resolver(this, alvo)
@@ -359,7 +360,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         mostrarLogo(r)
         ep = if (!r.serie) null else if (t > 0 && e > 0) r.episodio(t, e) else Titulos.ondeContinuar(this, r)
         // 404: se o episodio pedido for um novo lancamento que nao esta na lista local:
-        if (r.serie && r.tmdbId > 0) {
+        if (r.serie && r.tmdbId > 0 && Addons.ref(r.alvo) == null) {
             if (ep == null && t > 0 && e > 0) {
                 val extras = directUrl?.takeIf { it.isNotBlank() }?.let { mapOf("dub" to listOf(it)) }
                     ?: Resolvedor404.fontes(r.tmdbId, serie = true, temporada = t, numero = e)
@@ -392,6 +393,21 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
     private fun comecar(pedirRetomada: Boolean, herdarFonte: Boolean = false, startTime: Long = 0L) {
         val r = resolvido ?: return
         val episodioAtual = ep
+        val ref = Addons.ref(r.alvo)
+        if (ref != null) {
+            lifecycleScope.launch(semDerrubar) {
+                val fontes = Addons.fontesDoVideo(ref,episodioAtual)
+                val nativas = if (r.tmdbId > 0) Resolvedor404.fontes(r.tmdbId,r.serie,episodioAtual?.temporada ?: 0,episodioAtual?.numero ?: 0) else emptyMap()
+                if (ep != episodioAtual || resolvido != r) return@launch
+                val locais = episodioAtual?.fontes ?: r.filme?.fontes.orEmpty()
+                val unidas = (locais.keys + fontes.keys + nativas.keys).associateWith {
+                    (locais[it].orEmpty() + fontes[it].orEmpty() + nativas[it].orEmpty()).distinct()
+                }
+                if (unidas.isEmpty()) mostrarErro("Vídeo indisponível","Nenhum servidor disponível para este título.")
+                else iniciarComFontes(r,unidas,pedirRetomada,herdarFonte,startTime)
+            }
+            return
+        }
         if (episodioAtual != null && episodioAtual.fontes.isEmpty() && r.tmdbId > 0) {
             mostrarCarregando(getString(R.string.player_abrindo))
             lifecycleScope.launch(semDerrubar) {
@@ -420,7 +436,7 @@ class PlayerActivity : AppCompatActivity(), Connect.Listener {
         herdarFonte: Boolean = false,
         startTime: Long = 0L,
     ) {
-        val lembrada = fonteLembrada(r)
+        val lembrada = fonteLembrada(r)?.takeIf { opcao -> fontes.values.any { opcao.url in it } }
         if (lembrada != null) versao = lembrada.versao
         else if (versao !in fontes.keys) versao = if (Preferencias.versao in fontes) Preferencias.versao
                                                    else fontes.keys.firstOrNull() ?: "dub"

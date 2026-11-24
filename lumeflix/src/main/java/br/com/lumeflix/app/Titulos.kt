@@ -23,7 +23,7 @@ object Titulos {
     )
 
     /** Um episódio com todas as versões e fontes juntas. */
-    data class Ep(val temporada: Int, val numero: Int, val fontes: Map<String, List<String>>) {
+    data class Ep(val temporada: Int, val numero: Int, val fontes: Map<String, List<String>>, val videoId: String? = null) {
         val versoes: Set<String> get() = fontes.keys
     }
 
@@ -64,9 +64,32 @@ object Titulos {
     }
 
     private suspend fun resolverNoCatalogo(context: Context, alvo: Alvo, aoLerLocais: (suspend (Resolvido) -> Unit)?): Resolvido? {
+        Addons.ref(alvo)?.let { ref ->
+            val videos = Addons.meta(ref)?.optJSONArray("videos").objetos()
+            val eps = videos.mapNotNull {
+                val id = it.optString("id").takeIf(String::isNotBlank) ?: return@mapNotNull null
+                val t = it.optInt("season",-1)
+                val e = it.optInt("episode",-1)
+                if (t < 0 || e < 0) null else Ep(t,e,emptyMap(),id)
+            }.sortedWith(compareBy({ it.temporada }, { it.numero }))
+            val filme = if (alvo.serie) null else Filme(alvo.titulo,emptyMap())
+            val tmdb = alvo.tmdbId.takeIf { it > 0 } ?: if (ref.tipo in setOf("movie","series"))
+                Detalhes.tmdbDoImdb(ref.id,alvo.serie) ?: 0 else 0
+            val local = tmdb.takeIf { it > 0 }?.let { Generos.titulo(it,alvo.serie) }
+                ?.let { Vod.achar(context,it,alvo.serie) }?.takeIf { Generos.id(it.nomeCompleto,it.serie) == tmdb }
+            val nativo = local?.let { resolverNoCatalogo(context,Alvo(it.titulo,it.serie,it.letra,it.ano,tmdbId=tmdb),null) }
+            val unidos = (eps + nativo?.episodios.orEmpty()).groupBy { it.temporada to it.numero }.values.map { grupo ->
+                grupo.first().copy(fontes=grupo.flatMap { it.fontes.entries }.groupBy { it.key }
+                    .mapValues { (_, entradas) -> entradas.flatMap { it.value }.distinct() })
+            }.sortedWith(compareBy({ it.temporada }, { it.numero }))
+            return Resolvido(alvo,nativo?.nomeChave ?: ref.progresso,nativo?.filme ?: filme,unidos,tmdb)
+        }
         if (alvo.colecao.isNotEmpty()) {
             val achado = Vod.colecao(context, alvo.colecao)
-                .firstOrNull { it.titulo.equals(alvo.titulo, ignoreCase = true) } ?: return null
+                .singleOrNull {
+                    if (alvo.tmdbId > 0) it.tmdbId.toIntOrNull() == alvo.tmdbId
+                    else it.titulo.equals(alvo.titulo,ignoreCase=true) && it.ano == alvo.ano
+                } ?: return null
             val tmdb = alvo.tmdbId.takeIf { it > 0 } ?: achado.tmdbId.toIntOrNull()?.takeIf { it > 0 }
                 ?: Detalhes.buscarId(achado.titulo, true, achado.ano) ?: 0
             return Resolvido(alvo, Serie(achado.titulo, achado.ano, -1, 0).nomeCompleto, null,
@@ -74,16 +97,20 @@ object Titulos {
         }
         if (alvo.tmdbId <= 0) Generos.carregar(context)
         val achado = Vod.Achado(alvo.titulo, alvo.serie, alvo.letra, alvo.ano)
+        val idLocal = Generos.id(alvo.nomeCompleto,alvo.serie)
+        val aceitaLocais = alvo.tmdbId <= 0 || alvo.tmdbId == idLocal
         var tmdb = alvo.tmdbId.takeIf { it > 0 } ?: Generos.id(alvo.nomeCompleto, alvo.serie)
-            ?: Generos.id(alvo.titulo, alvo.serie) ?: 0
+            ?: 0
         if (tmdb <= 0) {
             tmdb = Detalhes.buscarId(alvo.titulo, alvo.serie, alvo.ano) ?: 0
         }
         return if (alvo.serie) {
-            val serie = Vod.serie(context, achado)
-            val epsLocais = if (serie != null) Vod.episodios(context, alvo.letra, serie) else emptyList()
+            val serie = if (aceitaLocais) Vod.serie(context, achado) else null
+            val grafias = if (serie == null || idLocal == null) emptyList() else Vod.series(context,alvo.letra)
+                .filter { it != serie && Generos.id(it.nomeCompleto,true) == idLocal }
+            val epsLocais = (listOfNotNull(serie) + grafias).flatMap { Vod.episodios(context,alvo.letra,it) }
             val agrupados = agrupar(epsLocais)
-            val nome = serie?.nomeCompleto ?: alvo.nomeCompleto
+            val nome = serie?.nomeCompleto ?: if (alvo.tmdbId > 0) "tmdb/series/$tmdb" else alvo.nomeCompleto
 
             if (tmdb > 0) {
                 if (agrupados.isNotEmpty()) aoLerLocais?.invoke(Resolvido(alvo, nome, null, agrupados, tmdb))
@@ -115,7 +142,7 @@ object Titulos {
             }
             Resolvido(alvo, nome, null, agrupados, tmdb)
         } else {
-            val filme = juntarGrafias(context, achado)
+            val filme = if (aceitaLocais) juntarGrafias(context, achado) else null
             if (filme != null) {
                 // O catálogo já tem links: abre imediatamente. Os addons são
                 // consultados pelo player apenas se as fontes locais falharem.
@@ -125,7 +152,7 @@ object Titulos {
             if (tmdb > 0) {
                 val extras = Resolvedor404.fontes(tmdb, serie = false)
                 if (extras.isNotEmpty()) {
-                    return Resolvido(alvo, alvo.titulo, Filme(alvo.titulo, extras), emptyList(), tmdb)
+                    return Resolvido(alvo, "tmdb/movie/$tmdb", Filme(alvo.titulo, extras), emptyList(), tmdb)
                 }
             }
             if (!Unlock.unlocked) return null
@@ -145,9 +172,9 @@ object Titulos {
      * duas viram uma — a pedida primeiro, as outras como reserva.
      */
     private suspend fun juntarGrafias(context: Context, achado: Vod.Achado): Filme? {
-        val chave = Vod.normalizar(Generos.semAno(achado.titulo))
+        val id = Generos.id(achado.nomeCompleto, false)
         val daLetra = Vod.filmes(context, achado.letra)
-        val iguais = daLetra.filter { Vod.normalizar(Generos.semAno(it.titulo)) == chave }
+        val iguais = if (id == null) emptyList() else daLetra.filter { Generos.id(it.titulo,false) == id }
         val pedido = daLetra.firstOrNull { it.titulo == achado.titulo }
             ?: Vod.filme(context, achado)
         val todos = listOfNotNull(pedido) + iguais.filter { it.titulo != pedido?.titulo }
@@ -179,7 +206,7 @@ object Titulos {
             if (soEssa && v != versao && out.isNotEmpty()) continue
             fontes[v].orEmpty().forEach { out += Opcao(v, it) }
         }
-        return out
+        return out.distinctBy { it.url }
     }
 
     /** Servidor (host sem "www.") de uma url de fonte, ou vazio. */
@@ -216,7 +243,7 @@ object Titulos {
         return doGrupo.getOrNull(posicao) ?: 0
     }
 
-    fun rotulo(versao: String) = if (versao == "leg") "Legendado" else "Dublado"
+    fun rotulo(versao: String) = when (versao) { "leg" -> "Legendado"; "dub" -> "Dublado"; "original" -> "Original"; else -> versao }
 
     /** Episódio por onde uma série deve começar ou continuar. */
     fun ondeContinuar(context: Context, r: Resolvido): Ep? {

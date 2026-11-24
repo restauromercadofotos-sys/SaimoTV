@@ -377,7 +377,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
                     Generos.capa(a.nomeCompleto, a.serie).orEmpty()))
             })
         }
-        val completas = topo + lista.filterNot { it.titulo in grupos }
+        val completas = topo + lista.filterNot { it.titulo in grupos } + Addons.filas(this)
         if (completas.isNotEmpty()) {
             mostrarFilas(completas)
             sugerirPorHistorico(this)?.let { mostrarFilas(completas + it) }
@@ -393,6 +393,7 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
             val itens = org.json.JSONArray()
             for (c in fila.cartoes.take(12)) {
                 val a = c.alvo ?: continue
+                if (Addons.ref(a) != null) continue
                 val tipo = when (a.colecao) { "animes" -> "a"; "doramas" -> "d"; else -> if (a.serie) "s" else "f" }
                 itens.put(org.json.JSONArray(listOf(a.titulo, tipo, a.letra, a.ano, c.capa, c.trailer.orEmpty(), c.capaLarga.orEmpty())))
             }

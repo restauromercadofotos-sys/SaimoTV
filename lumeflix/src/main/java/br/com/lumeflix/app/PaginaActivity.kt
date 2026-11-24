@@ -135,7 +135,7 @@ open class PaginaActivity : TelaComMenu() {
 
         // Sem endereço (ou com endereço que não carregou) não há acervo: estado
         // vazio em vez de categorias sem nada dentro.
-        if (destaques.isEmpty() && Vod.entradas(this).isEmpty()) {
+        if (destaques.isEmpty() && Addons.instalados().isEmpty() && Vod.entradas(this).isEmpty()) {
             val msg = getString(if (Enderecos.filmes == null) R.string.vazio_filmes else R.string.vazio_falhou)
             destaque.padrao(getString(R.string.menu_on_demand), msg)
             mostrar(emptyList())
@@ -164,6 +164,7 @@ open class PaginaActivity : TelaComMenu() {
         if (!montou && lista.isNotEmpty()) mostrar(lista)
         Generos.carregar(this)
         if (todos) montarTodos(lista) else montarTipo(lista)
+        if (!colecao) lista += Addons.filas(this, tipo = if (todos) null else if (serie) "series" else "movie")
         mostrar(lista)
         if (!todos && !colecao) {
             val editoriais = Detalhes.fileirasEditoriais(this, serie).map { (nome, titulos) ->
@@ -188,7 +189,7 @@ open class PaginaActivity : TelaComMenu() {
                 return@withContext anterior
             val candidatos = (if (colecao) daColecao(tipo) else doAcervo(serie))
                 .sortedByDescending { it.ano }
-                .distinctBy { item -> item.alvo.tmdbId.takeIf { it > 0 } ?: Generos.id(item.alvo.titulo, item.alvo.serie)
+                .distinctBy { item -> item.alvo.tmdbId.takeIf { it > 0 } ?: Generos.id(item.alvo.nomeCompleto, item.alvo.serie)
                     ?: Pair(Generos.semAno(item.alvo.titulo).lowercase(Locale.ROOT), item.ano) }
             val generos = nomes.sortedBy { g -> ORDEM_GENEROS.indexOf(g).let { if (it < 0) 99 else it } }
             val fileiras = generos.mapNotNull { g -> porGenero(candidatos, g)?.let { g to it } }
@@ -301,11 +302,11 @@ open class PaginaActivity : TelaComMenu() {
         adaptador.trocar(Inicio.organizarCatalogo(lista, getString(R.string.vod_continuar)).map { fila ->
             if (fila.titulo in indicePorGenero) return@map fila
             fila.copy(cartoes = fila.cartoes.distinctBy { cartao ->
-                val alvo = cartao.alvo
-                val id = alvo?.tmdbId?.takeIf { it > 0 }
-                    ?: alvo?.let { Generos.id(it.titulo, it.serie) }
+                val alvo = cartao.alvo ?: return@distinctBy cartao
+                Addons.ref(alvo)?.let { return@distinctBy it.progresso }
+                val id = alvo.tmdbId.takeIf { it > 0 } ?: Generos.id(alvo.nomeCompleto,alvo.serie)
                 if (id != null) "${alvo?.serie}|tmdb:$id"
-                else "${alvo?.serie}|${Generos.semAno(cartao.titulo).trim().lowercase(Locale.ROOT)}|${alvo?.ano.orEmpty()}"
+                else alvo
             })
         })
         if (!montou) {

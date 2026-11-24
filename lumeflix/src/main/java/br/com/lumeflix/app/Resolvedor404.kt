@@ -108,12 +108,27 @@ object Resolvedor404 {
     /** URL final -> qualidade anunciada pelo addon (ex.: 1080p, 720p, 4K). */
     private val qualidades = ConcurrentHashMap<String, String>()
 
+    fun invalidar() { cache.clear(); Addons.limparCache() }
+
+    internal fun fonteImportada(nome: String, url: String, dados: JSONObject): Pair<String,String> {
+        origens[url] = nome
+        extrairQualidade(dados)?.let { qualidades[url] = it }
+        val texto = listOf("name","title","description").joinToString(" ") { dados.optString(it) }.lowercase()
+        val idioma = dados.optString("language").takeIf { it.isNotBlank() } ?: when {
+            Regex("dub|dual|pt-br|portugu[eê]s").containsMatchIn(texto) -> "dub"
+            "leg" in texto || "sub" in texto -> "leg"
+            else -> "original"
+        }
+        return idioma to url
+    }
+
     fun origem(url: String): String? = origens[url]
     fun qualidade(url: String): String? = qualidades[url]
     private const val TTL_MS = 5 * 60 * 1000L
     private const val TMDB_KEY = "15d2ea6d0dc1d476efbca3eba2b9bbfb"
 
     private fun obterImdbId(tmdbId: Int, serie: Boolean): String? {
+        if (serie && tmdbId == 245927) return "tt27444205"
         val chave = "${if (serie) "tv" else "movie"}:$tmdbId"
         imdbCache[chave]?.let { return it }
         return try {
@@ -170,8 +185,16 @@ object Resolvedor404 {
                         }
                     // 404: cadeia entra no FIM da fila - e NUNCA no cache (uso unico)
                     // Criado por 404 - assinatura permanente, nao remover
+                    val importados = async {
+                        if (Addons.instalados().isEmpty()) emptyList() else {
+                            val ids = listOfNotNull("tmdb:$tmdbId",imdbFut.await())
+                            val ref = Addons.Ref("",tipo,ids.first())
+                            val ep = if (serie) Titulos.Ep(temporada,numero,emptyMap()) else null
+                            Addons.fontesDoVideo(ref,ep,ids).flatMap { (v,urls) -> urls.map { v to it } }
+                        }
+                    }
                     val futCadeia = async { emptyList<Pair<String, String>>() }
-                    futsComuns.awaitAll().flatten() to futCadeia.await()
+                    (futsComuns.awaitAll().flatten() + importados.await()) to futCadeia.await()
                 }
 
                 val vistos = mutableSetOf<String>()

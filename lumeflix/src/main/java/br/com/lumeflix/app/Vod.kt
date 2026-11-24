@@ -249,11 +249,19 @@ object Vod {
         val mapas = porTitulo ?: run {
             val f = HashMap<String, Achado>(40_000)
             val s = HashMap<String, Achado>(12_000)
-            for (e in entradas(context)) (if (e.serie) s else f).putIfAbsent(e.titulo, e.achado)
+            val ambiguos = mutableSetOf<Pair<Boolean,String>>()
+            for (e in entradas(context)) {
+                val mapa = if (e.serie) s else f
+                for (nome in setOf(e.titulo,e.achado.nomeCompleto)) {
+                    val anterior = mapa.putIfAbsent(nome,e.achado)
+                    if (anterior != null && anterior != e.achado) ambiguos += e.serie to nome
+                }
+            }
+            for ((serie,nome) in ambiguos) (if (serie) s else f).remove(nome)
             (f to s).also { porTitulo = it }
         }
         val mapa = if (serie) mapas.second else mapas.first
-        return mapa[titulo] ?: mapa[Generos.semAno(titulo)]
+        return mapa[titulo]
     }
 
     suspend fun entradas(context: Context): List<Entrada> = withContext(Dispatchers.IO) {
@@ -348,7 +356,7 @@ object Vod {
 
     /** Uma série específica, pelo nome, dentro da letra dela. */
     suspend fun serie(context: Context, achado: Achado): Serie? {
-        val igual = { it: Serie -> it.titulo == achado.titulo && (achado.ano.isBlank() || it.ano == achado.ano) }
+        val igual = { it: Serie -> it.titulo == achado.titulo && it.ano == achado.ano }
         return series(context, achado.letra).firstOrNull(igual)
             ?: series(context, achado.letra, fresco = true).firstOrNull(igual)
     }
