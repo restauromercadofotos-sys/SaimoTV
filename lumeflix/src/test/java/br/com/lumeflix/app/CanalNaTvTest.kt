@@ -21,6 +21,13 @@ class CanalNaTvTest {
             Destaques.Fila("Séries em alta", listOf(alta.copy(capa = ""), alta)))
         assertEquals(listOf(alta, outro), CanalNaTv.selecionar(filas, true))
     }
+    @Test fun `usa capa existente quando detalhes nao tem imagem horizontal`() {
+        assertEquals("capa", CanalNaTv.escolherArte(null, null, "capa"))
+        assertEquals("fundo", CanalNaTv.escolherArte(null, "fundo", "capa"))
+        assertEquals("arte", CanalNaTv.escolherArte("arte", "fundo", "capa"))
+        assertNull(CanalNaTv.escolherArte(null, null, ""))
+    }
+
     @Test fun `limita cada canal a vinte cartoes`() {
         val itens = (1..30).map { Destaques.Item("Série $it", 's', "S", "", "capa") }
         assertEquals(itens.take(20), CanalNaTv.selecionar(listOf(Destaques.Fila("Séries", itens)), true))
