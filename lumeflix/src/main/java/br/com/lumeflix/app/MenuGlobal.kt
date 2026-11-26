@@ -171,6 +171,10 @@ object MenuGlobal {
         abas.findViewWithTag<View>(Aba.EXTRAS)?.visibility = if (Unlock.unlocked) View.VISIBLE else View.GONE
     }
 
+    // As abas normalmente já têm o Início abaixo delas na pilha da tarefa.
+    internal fun podeNavegarDireto(estaNoInicio: Boolean, ehRaiz: Boolean) =
+        estaNoInicio || !ehRaiz
+
     private fun ir(tela: Activity, aba: Aba, atual: Aba, peloDirecional: Boolean = false) {
         if (aba == atual || !Conteudo.permiteAba(aba)) return
         val inicio = Intent(tela, EscolhaActivity::class.java)
@@ -189,8 +193,16 @@ object MenuGlobal {
             Aba.APOIE -> Intent(tela, DoacaoActivity::class.java)
         }
         (destino ?: inicio).putExtra("lumeflix.focoMenu", peloDirecional)
-        if (destino == null) tela.startActivity(inicio)
-        else tela.startActivities(arrayOf(inicio, destino))
+        if (destino == null) {
+            tela.startActivity(inicio)
+        } else if (podeNavegarDireto(tela is EscolhaActivity, tela.isTaskRoot)) {
+            // Não reabre o Início apenas para chegar a outra aba.
+            tela.startActivity(destino)
+            if (tela !is EscolhaActivity) tela.finish()
+        } else {
+            // Uma Activity aberta por link pode não ter o Início abaixo dela.
+            tela.startActivities(arrayOf(inicio, destino))
+        }
         tela.overridePendingTransition(0, 0)
     }
 }
