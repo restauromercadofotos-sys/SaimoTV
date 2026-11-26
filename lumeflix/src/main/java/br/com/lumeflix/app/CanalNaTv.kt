@@ -24,6 +24,11 @@ object CanalNaTv {
     private const val PREFS = "canal_na_tv"
     private const val VALIDADE_MS = 12 * 60 * 60 * 1000L
 
+    internal fun escolherArte(arteHorizontal: String?, fundo: String?, capa: String): String? =
+        arteHorizontal?.takeIf { it.isNotBlank() }
+            ?: fundo?.takeIf { it.isNotBlank() }
+            ?: capa.takeIf { it.isNotBlank() }
+
     internal fun selecionar(filas: List<Destaques.Fila>, series: Boolean): List<Destaques.Item> {
         val categoria = if (series) "series em alta" else "em alta"
         return filas.sortedByDescending { Vod.normalizar(it.titulo) == categoria }
@@ -79,7 +84,7 @@ object CanalNaTv {
             Triple(series, chave, id)
         }
         val pendentes = canais.filter { (_, chave, _) ->
-            System.currentTimeMillis() - prefs.getLong("paisagem_$chave", 0L) >= VALIDADE_MS
+            System.currentTimeMillis() - prefs.getLong("paisagem_v2_$chave", 0L) >= VALIDADE_MS
         }
         if (pendentes.isEmpty()) return true
         val filas = Destaques.filas(context)
@@ -94,7 +99,8 @@ object CanalNaTv {
                 TvContractCompat.buildPreviewProgramsUriForChannel(canal)).build())
             itens.forEachIndexed { i, item ->
                 val ficha = Detalhes.de(item.titulo, item.serie)
-                val arte = ficha?.arteLauncher ?: ficha?.fundo ?: return@forEachIndexed
+                val arte = escolherArte(ficha?.arteLauncher, ficha?.fundo, item.capa) ?: return@forEachIndexed
+                val horizontal = !ficha?.arteLauncher.isNullOrBlank() || !ficha?.fundo.isNullOrBlank()
                 val alvo = Alvo(item.titulo, item.serie, item.letra, item.ano,
                     if (item.daColecao) item.colecao else "")
                 val programa = PreviewProgram.Builder().setChannelId(canal)
@@ -103,7 +109,9 @@ object CanalNaTv {
                     .setIntentUri(Links.ficha(alvo)).setInternalProviderId(item.titulo)
                     .apply {
                         setPosterArtUri(Uri.parse(arte))
-                        setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9)
+                        setPosterArtAspectRatio(
+                            if (horizontal) TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9
+                            else TvContractCompat.PreviewPrograms.ASPECT_RATIO_MOVIE_POSTER)
                         item.ano.toIntOrNull()?.let { setReleaseDate(it.toString()) }
                     }.build()
                 operacoes += ContentProviderOperation.newInsert(TvContractCompat.PreviewPrograms.CONTENT_URI)
@@ -114,7 +122,7 @@ object CanalNaTv {
                 continue
             }
             context.contentResolver.applyBatch(TvContractCompat.AUTHORITY, operacoes)
-            prefs.edit().putLong("paisagem_$chave", System.currentTimeMillis()).apply()
+            prefs.edit().putLong("paisagem_v2_$chave", System.currentTimeMillis()).apply()
         }
         return completo
     }
