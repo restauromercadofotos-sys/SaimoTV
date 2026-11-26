@@ -47,7 +47,7 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
     private lateinit var resultados: RecyclerView
     private val digitado = StringBuilder()
     private var trabalho: Job? = null
-    private val adaptador by lazy { Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) }) }
+    private val adaptador by lazy { Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) }, trocasFrequentes = true) }
 
     private var ultimoFocoTeclado: View? = null
 
