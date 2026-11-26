@@ -1,6 +1,8 @@
 package br.com.lumeflix.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class InicioNavegacaoTest {
@@ -10,6 +12,12 @@ class InicioNavegacaoTest {
         val cartao = Inicio.Cartao("Exemplo", "", "E") {}
         val filas = nomes.map { Inicio.Fila(it, listOf(cartao), comFichas = false) }
         return Inicio.organizarCatalogo(filas, continuar).map { it.titulo }
+    }
+
+    @Test fun `troca de abas nao recria inicio se ja existe abaixo na pilha`() {
+        assertTrue(MenuGlobal.podeNavegarDireto(estaNoInicio = true, ehRaiz = true))
+        assertTrue(MenuGlobal.podeNavegarDireto(estaNoInicio = false, ehRaiz = false))
+        assertFalse(MenuGlobal.podeNavegarDireto(estaNoInicio = false, ehRaiz = true))
     }
 
     @Test fun `continuar fica em segundo no cache e apos os destaques chegarem`() {

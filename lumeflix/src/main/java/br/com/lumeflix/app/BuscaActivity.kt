@@ -21,6 +21,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+internal fun buscaRemotaDeAddons(termo: String) = termo.length >= 3
+
 /**
  * A busca, uma só para tudo: canais, filmes, séries, animes, doramas e atores.
  *
@@ -45,7 +47,7 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
     private lateinit var resultados: RecyclerView
     private val digitado = StringBuilder()
     private var trabalho: Job? = null
-    private val adaptador by lazy { Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) }) }
+    private val adaptador by lazy { Inicio.Adapter(escopo = lifecycleScope, capaDe = { t, s -> Generos.capa(t, s) }, trocasFrequentes = true) }
 
     private var ultimoFocoTeclado: View? = null
 
@@ -66,8 +68,8 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
         montarTeclado()
         intent.getStringExtra(TERMO)?.let { digitado.append(it) }
 
-        // Prepara o índice enquanto a pessoa ainda procura a primeira letra.
-        lifecycleScope.launch(semDerrubar) { Generos.carregar(this@BuscaActivity); Vod.entradas(this@BuscaActivity) }
+        // Capas carregam em segundo plano; o índice de busca é criado só quando necessário.
+        lifecycleScope.launch(semDerrubar) { Generos.carregar(this@BuscaActivity) }
         atualizar(imediato = true)
     }
 
@@ -255,7 +257,7 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
         trabalho?.cancel()
         val termo = digitado.toString().trim()
         trabalho = lifecycleScope.launch(semDerrubar) {
-            if (!imediato) delay(180)
+            if (!imediato) delay(300)
             if (termo.isEmpty()) { mostrarInicio(); return@launch }
             val filas = mutableListOf<Inicio.Fila>()
 
@@ -267,7 +269,7 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
                 }
             }, Inicio.Tipo.LARGO)
 
-            val addons = async { Addons.filas(this@BuscaActivity,termo) }
+            val addons = if (buscaRemotaDeAddons(termo)) async { Addons.filas(this@BuscaActivity,termo) } else null
             val titulosOnline = if (termo.length >= 3) async { Detalhes.buscarTitulos(termo) } else null
             val achados = Vod.buscar(this@BuscaActivity, termo, if (termo.length == 1) 20 else 80)
             val filmes = achados.filter { !it.serie }
@@ -319,7 +321,7 @@ class BuscaActivity : TelaComMenu(), Connect.Listener {
                 }
             }
 
-            filas += addons.await()
+            filas += addons?.await().orEmpty()
             mostrar(filas, termo)
 
             // Atores vêm do TMDB: por último, e só com o termo parado.

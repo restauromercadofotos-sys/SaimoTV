@@ -435,7 +435,7 @@ class FichaActivity : TelaComMenu() {
         findViewById<TextView>(R.id.fichaSinopse).text = ficha.sinopse
         if (!BuildConfig.TV_AO_VIVO) {
             findViewById<TextView>(R.id.fichaLerSinopse).apply {
-                val resumo = findViewById<TextView>(R.id.fichaSinopse)
+                val resumo = this@FichaActivity.findViewById<TextView>(R.id.fichaSinopse)
                 resumo.post {
                     val layout = resumo.layout
                     visibility = if (layout != null && layout.lineCount > 0 &&

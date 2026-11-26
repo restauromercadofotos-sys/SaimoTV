@@ -170,6 +170,8 @@ object Inicio {
         private val aoFocar: ((Cartao) -> Unit)? = null,
         /// Fileiras de catálogo do LumeFlix usam artes 16:9; TV/radio mantêm os layouts próprios.
         private val paisagem: Boolean = false,
+        // Na pesquisa as listas mudam rapidamente; evitar diff em RecyclerViews aninhados.
+        private val trocasFrequentes: Boolean = false,
     ) : RecyclerView.Adapter<Adapter.Holder>() {
 
         private var filas: List<Fila> = emptyList()
@@ -199,6 +201,11 @@ object Inicio {
          * guia chegavam segundos depois da tela abrir.
          */
         fun trocar(novas: List<Fila>) {
+            if (trocasFrequentes) {
+                filas = novas
+                notifyDataSetChanged()
+                return
+            }
             val vertical = listaExibida
             val linha = vertical?.findFocus()?.let { vertical.findContainingViewHolder(it) }
             val visivel = linha?.bindingAdapterPosition?.let(filas::getOrNull)
@@ -251,7 +258,7 @@ object Inicio {
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val fila = filas[position]
             val anterior = holder.capas.adapter as? Capas
-            if (holder.titulo.text == fila.titulo && anterior != null) {
+            if (!trocasFrequentes && holder.titulo.text == fila.titulo && anterior != null) {
                 anterior.atualizar(fila.cartoes)
                 return
             }

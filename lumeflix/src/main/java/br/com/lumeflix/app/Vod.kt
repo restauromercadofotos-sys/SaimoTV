@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -238,48 +241,68 @@ object Vod {
     @Volatile
     private var indice: List<Entrada>? = null
 
+    // Evita carregar o mesmo índice grande simultaneamente em buscas concorrentes.
+    private val indiceMutex = Mutex()
+
     @Volatile
     private var porTitulo: Pair<HashMap<String, Achado>, HashMap<String, Achado>>? = null
+    private val porTituloMutex = Mutex()
 
     /**
      * Um título do acervo pelo nome exato, sem copiar o índice: os mapas
      * apontam para os mesmos objetos da busca.
      */
-    suspend fun achar(context: Context, titulo: String, serie: Boolean): Achado? {
-        val mapas = porTitulo ?: run {
-            val f = HashMap<String, Achado>(40_000)
-            val s = HashMap<String, Achado>(12_000)
-            val ambiguos = mutableSetOf<Pair<Boolean,String>>()
-            for (e in entradas(context)) {
-                val mapa = if (e.serie) s else f
-                for (nome in setOf(e.titulo,e.achado.nomeCompleto)) {
-                    val anterior = mapa.putIfAbsent(nome,e.achado)
-                    if (anterior != null && anterior != e.achado) ambiguos += e.serie to nome
+    suspend fun achar(context: Context, titulo: String, serie: Boolean): Achado? =
+        withContext(Dispatchers.Default) {
+            val mapas = porTitulo ?: run {
+                porTituloMutex.lock()
+                try {
+                    porTitulo ?: run {
+                        val f = HashMap<String, Achado>(40_000)
+                        val s = HashMap<String, Achado>(12_000)
+                        val ambiguos = mutableSetOf<Pair<Boolean,String>>()
+                        for ((n, e) in entradas(context).withIndex()) {
+                            if (n % 256 == 0) currentCoroutineContext().ensureActive()
+                            val mapa = if (e.serie) s else f
+                            for (nome in setOf(e.titulo,e.achado.nomeCompleto)) {
+                                val anterior = mapa.putIfAbsent(nome,e.achado)
+                                if (anterior != null && anterior != e.achado) ambiguos += e.serie to nome
+                            }
+                        }
+                        for ((isSerie,nome) in ambiguos) (if (isSerie) s else f).remove(nome)
+                        (f to s).also { porTitulo = it }
+                    }
+                } finally {
+                    porTituloMutex.unlock()
                 }
             }
-            for ((serie,nome) in ambiguos) (if (serie) s else f).remove(nome)
-            (f to s).also { porTitulo = it }
+            (if (serie) mapas.second else mapas.first)[titulo]
         }
-        val mapa = if (serie) mapas.second else mapas.first
-        return mapa[titulo]
-    }
 
     suspend fun entradas(context: Context): List<Entrada> = withContext(Dispatchers.IO) {
         indice?.let { return@withContext it }
-        val texto = arquivo(context, "busca.txt") ?: return@withContext emptyList()
-        val out = ArrayList<Entrada>(50_000)
-        for (linha in texto.lineSequence()) {
-            val campos = linha.split("\t")
-            if (campos.size < 3 || campos[0].isBlank()) continue
-            // Linha sem nome, só com ano (" (2024)"), é defeito do gerador.
-            if (Generos.semAno(campos[0]).isBlank()) continue
-            val ano = campos.getOrNull(3).orEmpty()
-            val achado = Achado(campos[0], campos[1] == "s", campos[2], ano)
-            val chave = normalizar(Generos.semAno(campos[0]))
-            out += Entrada(achado, chave)
+        indiceMutex.lock()
+        try {
+            indice?.let { return@withContext it }
+            val texto = arquivo(context, "busca.txt") ?: return@withContext emptyList()
+            val out = ArrayList<Entrada>(50_000)
+            for ((n, linha) in texto.lineSequence().withIndex()) {
+                // Uma pesquisa cancelada não deve continuar consumindo RAM ao digitar.
+                if (n % 256 == 0) currentCoroutineContext().ensureActive()
+                val campos = linha.split("\t")
+                if (campos.size < 3 || campos[0].isBlank()) continue
+                // Linha sem nome, só com ano (" (2024)"), é defeito do gerador.
+                if (Generos.semAno(campos[0]).isBlank()) continue
+                val ano = campos.getOrNull(3).orEmpty()
+                val achado = Achado(campos[0], campos[1] == "s", campos[2], ano)
+                val chave = normalizar(Generos.semAno(campos[0]))
+                out += Entrada(achado, chave)
+            }
+            indice = out
+            out
+        } finally {
+            indiceMutex.unlock()
         }
-        indice = out
-        out
     }
 
     /**
@@ -296,13 +319,15 @@ object Vod {
             if (alvo.isEmpty()) return@withContext emptyList()
             val pedacos = alvo.split(' ').filter { it.isNotEmpty() }
             val pontos = ArrayList<Pair<Int, Entrada>>()
-            for (entrada in entradas(context)) {
+            for ((n, entrada) in entradas(context).withIndex()) {
+                if (n % 256 == 0) currentCoroutineContext().ensureActive()
                 val p = pontuar(entrada, alvo, pedacos)
                 if (p < Int.MAX_VALUE) pontos += p to entrada
             }
             if (pontos.size < 8 && alvo.length >= 4) {
                 val ja = pontos.mapTo(HashSet()) { it.second }
-                for (entrada in entradas(context)) {
+                for ((n, entrada) in entradas(context).withIndex()) {
+                    if (n % 256 == 0) currentCoroutineContext().ensureActive()
                     if (entrada in ja) continue
                     val palavras = entrada.chave.split(' ')
                     if (pedacos.all { p -> palavras.any { quase(it, p) } }) pontos += 50 to entrada

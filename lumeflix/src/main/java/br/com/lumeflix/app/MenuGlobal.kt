@@ -171,6 +171,10 @@ object MenuGlobal {
         abas.findViewWithTag<View>(Aba.EXTRAS)?.visibility = if (Unlock.unlocked) View.VISIBLE else View.GONE
     }
 
+    // As abas normalmente já têm o Início abaixo delas na pilha da tarefa.
+    internal fun podeNavegarDireto(estaNoInicio: Boolean, ehRaiz: Boolean) =
+        estaNoInicio || !ehRaiz
+
     private fun ir(tela: Activity, aba: Aba, atual: Aba, peloDirecional: Boolean = false) {
         if (aba == atual || !Conteudo.permiteAba(aba)) return
         val inicio = Intent(tela, EscolhaActivity::class.java)
@@ -189,8 +193,16 @@ object MenuGlobal {
             Aba.APOIE -> Intent(tela, DoacaoActivity::class.java)
         }
         (destino ?: inicio).putExtra("lumeflix.focoMenu", peloDirecional)
-        if (destino == null) tela.startActivity(inicio)
-        else tela.startActivities(arrayOf(inicio, destino))
+        if (destino == null) {
+            tela.startActivity(inicio)
+        } else if (podeNavegarDireto(tela is EscolhaActivity, tela.isTaskRoot)) {
+            // Não reabre o Início apenas para chegar a outra aba.
+            tela.startActivity(destino)
+            if (tela !is EscolhaActivity) tela.finish()
+        } else {
+            // Uma Activity aberta por link pode não ter o Início abaixo dela.
+            tela.startActivities(arrayOf(inicio, destino))
+        }
         tela.overridePendingTransition(0, 0)
     }
 }
@@ -330,13 +342,28 @@ abstract class TelaComMenu : AppCompatActivity() {
             val fundoTopo = abas.background
             val d = resources.displayMetrics.density
             fun dp(v: Int) = (v * d + 0.5f).toInt()
-            var estado: Pair<Boolean, View?>? = null
+            var estado: Pair<Boolean, Boolean>? = null
+            var focoAnterior: View? = null
             fun atualizarMenu() {
                 val lateral = banner.visibility == View.GONE
                 val foco = if (lateral) abas.findFocus() else null
-                val novo = lateral to foco
-                if (estado == novo) return
+                val novo = lateral to (foco != null)
+                if (estado == novo) {
+                    if (lateral && focoAnterior !== foco) {
+                        (focoAnterior as? TextView)?.apply {
+                            setTextColor(0xFFAAAAAA.toInt())
+                            typeface = android.graphics.Typeface.create("sans-serif", 0)
+                        }
+                        (foco as? TextView)?.apply {
+                            setTextColor(-1)
+                            typeface = android.graphics.Typeface.create("sans-serif", 1)
+                        }
+                        focoAnterior = foco
+                    }
+                    return
+                }
                 estado = novo
+                focoAnterior = foco
                 val expandido = foco != null
                 abas.orientation = if (lateral) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
                 abas.background = if (lateral) null else fundoTopo
@@ -380,8 +407,18 @@ abstract class TelaComMenu : AppCompatActivity() {
                 }
                 lista.setPadding(inicio + if (lateral) dp(48) else 0, lista.paddingTop, lista.paddingRight, lista.paddingBottom)
             }
-            lista.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> atualizarMenu() }
-            grupo.viewTreeObserver.addOnGlobalFocusChangeListener { _, _ -> atualizarMenu() }
+            // Mudar orientação/padding durante onLayout provoca passagens extras e perda de quadros.
+            var atualizacaoPendente = false
+            fun agendarAtualizacao() {
+                if (atualizacaoPendente) return
+                atualizacaoPendente = true
+                lista.post {
+                    atualizacaoPendente = false
+                    if (lista.isAttachedToWindow) atualizarMenu()
+                }
+            }
+            lista.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> agendarAtualizacao() }
+            grupo.viewTreeObserver.addOnGlobalFocusChangeListener { _, _ -> agendarAtualizacao() }
         }
         vazioView = vazio
         vazio.findViewById<TextView>(R.id.vazioBotao).apply {

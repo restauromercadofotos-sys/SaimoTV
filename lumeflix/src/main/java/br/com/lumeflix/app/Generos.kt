@@ -5,6 +5,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.Request
 import java.io.File
 
@@ -134,17 +136,22 @@ object Generos {
      * que está em disco entra na hora e o arquivo novo, quando chega, refaz os
      * mapas — a capa que faltava aparece sozinha na próxima rolagem.
      */
+    // Evita montar simultaneamente mapas grandes enquanto várias telas abrem.
+    private val carregarMutex = Mutex()
+
     suspend fun carregar(context: Context) = withContext(Dispatchers.IO) {
-        contexto = context.applicationContext
-        if (prontos) return@withContext
-        InfoDosTitulos.carregar(context)
-        val local = arquivoLocal(context)
-        if (local.exists() && local.length() > 0) {
-            runCatching { local.bufferedReader().useLines { montar(it) } }
-            if (velho(local)) baixarDepois(context)
-            if (prontos) return@withContext
+        carregarMutex.withLock {
+            contexto = context.applicationContext
+            if (prontos) return@withLock
+            InfoDosTitulos.carregar(context)
+            val local = arquivoLocal(context)
+            if (local.exists() && local.length() > 0) {
+                runCatching { local.bufferedReader().useLines { montar(it) } }
+                if (velho(local)) baixarDepois(context)
+                if (prontos) return@withLock
+            }
+            if (baixar(context)) runCatching { local.bufferedReader().useLines { montar(it) } }
         }
-        if (baixar(context)) runCatching { local.bufferedReader().useLines { montar(it) } }
     }
 
     /** Monta os mapas a partir do conteúdo do arquivo, linha a linha. */
