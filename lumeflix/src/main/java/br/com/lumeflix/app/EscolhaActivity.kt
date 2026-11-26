@@ -334,7 +334,10 @@ class EscolhaActivity : TelaComMenu(), Connect.Listener {
         // O que é local (continuar, ao vivo, favoritos) entra antes das fichas:
         // ler as fichas (3,7 MB) leva até 2 s num TV Box lento, e a tela
         // ficava vazia esse tempo todo. As capas dos destaques chegam depois.
-        val salvas = if (primeiraVez) lerFileiras() else emptyList()
+        // Parsear o cache fora da thread de UI: evita a pequena congelada antes da primeira fileira.
+        val salvas = if (primeiraVez) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            lerFileiras()
+        } else emptyList()
         if (salvas.isNotEmpty()) mostrarFilas(listOfNotNull(continuar(), favoritos()) + salvas)
         if (salvas.isEmpty() && !Generos.prontos) {
             val locais = listOfNotNull(continuar(), favoritos()) + Destaques.filas(this, somenteLocal = true).filterNot { Destaques.lancamentoGenerico(it.titulo) }.map { fila ->
