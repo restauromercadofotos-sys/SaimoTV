@@ -3,6 +3,8 @@ package br.com.lumeflix.app
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Ano, nota, classificação indicativa e popularidade de cada título, para os
@@ -26,20 +28,24 @@ object InfoDosTitulos {
         return mapa[titulo]
     }
 
+    private val carregarMutex = Mutex()
+
     suspend fun carregar(context: Context) = withContext(Dispatchers.IO) {
-        if (prontos) return@withContext
-        val texto = Vod.texto(context, "detalhes.txt") ?: return@withContext
-        val f = HashMap<String, Info>(40_000)
-        val s = HashMap<String, Info>(12_000)
-        for (linha in texto.lineSequence()) {
-            if (linha.isEmpty() || linha[0] == '#') continue
-            val c = linha.split('\t')
-            if (c.size < 6) continue
-            val idade = when (val k = c[4]) { "L" -> 0; "" -> -1; else -> k.toIntOrNull() ?: -1 }
-            val info = Info(c[2].toIntOrNull() ?: 0, c[3].toFloatOrNull() ?: 0f, idade, c[5].toIntOrNull() ?: 0)
-            if (c[0] == "s") s[c[1]] = info else f[c[1]] = info
+        carregarMutex.withLock {
+            if (prontos) return@withLock
+            val texto = Vod.texto(context, "detalhes.txt") ?: return@withLock
+            val f = HashMap<String, Info>(40_000)
+            val s = HashMap<String, Info>(12_000)
+            for (linha in texto.lineSequence()) {
+                if (linha.isEmpty() || linha[0] == '#') continue
+                val c = linha.split('\t')
+                if (c.size < 6) continue
+                val idade = when (val k = c[4]) { "L" -> 0; "" -> -1; else -> k.toIntOrNull() ?: -1 }
+                val info = Info(c[2].toIntOrNull() ?: 0, c[3].toFloatOrNull() ?: 0f, idade, c[5].toIntOrNull() ?: 0)
+                if (c[0] == "s") s[c[1]] = info else f[c[1]] = info
+            }
+            filmes = f
+            series = s
         }
-        filmes = f
-        series = s
     }
 }
