@@ -246,29 +246,38 @@ object Vod {
 
     @Volatile
     private var porTitulo: Pair<HashMap<String, Achado>, HashMap<String, Achado>>? = null
+    private val porTituloMutex = Mutex()
 
     /**
      * Um título do acervo pelo nome exato, sem copiar o índice: os mapas
      * apontam para os mesmos objetos da busca.
      */
-    suspend fun achar(context: Context, titulo: String, serie: Boolean): Achado? {
-        val mapas = porTitulo ?: run {
-            val f = HashMap<String, Achado>(40_000)
-            val s = HashMap<String, Achado>(12_000)
-            val ambiguos = mutableSetOf<Pair<Boolean,String>>()
-            for (e in entradas(context)) {
-                val mapa = if (e.serie) s else f
-                for (nome in setOf(e.titulo,e.achado.nomeCompleto)) {
-                    val anterior = mapa.putIfAbsent(nome,e.achado)
-                    if (anterior != null && anterior != e.achado) ambiguos += e.serie to nome
+    suspend fun achar(context: Context, titulo: String, serie: Boolean): Achado? =
+        withContext(Dispatchers.Default) {
+            val mapas = porTitulo ?: run {
+                porTituloMutex.lock()
+                try {
+                    porTitulo ?: run {
+                        val f = HashMap<String, Achado>(40_000)
+                        val s = HashMap<String, Achado>(12_000)
+                        val ambiguos = mutableSetOf<Pair<Boolean,String>>()
+                        for ((n, e) in entradas(context).withIndex()) {
+                            if (n % 256 == 0) currentCoroutineContext().ensureActive()
+                            val mapa = if (e.serie) s else f
+                            for (nome in setOf(e.titulo,e.achado.nomeCompleto)) {
+                                val anterior = mapa.putIfAbsent(nome,e.achado)
+                                if (anterior != null && anterior != e.achado) ambiguos += e.serie to nome
+                            }
+                        }
+                        for ((isSerie,nome) in ambiguos) (if (isSerie) s else f).remove(nome)
+                        (f to s).also { porTitulo = it }
+                    }
+                } finally {
+                    porTituloMutex.unlock()
                 }
             }
-            for ((serie,nome) in ambiguos) (if (serie) s else f).remove(nome)
-            (f to s).also { porTitulo = it }
+            (if (serie) mapas.second else mapas.first)[titulo]
         }
-        val mapa = if (serie) mapas.second else mapas.first
-        return mapa[titulo]
-    }
 
     suspend fun entradas(context: Context): List<Entrada> = withContext(Dispatchers.IO) {
         indice?.let { return@withContext it }
